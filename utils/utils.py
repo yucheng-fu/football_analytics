@@ -1,6 +1,7 @@
 
 import numpy as np
 import polars as pl
+import mplsoccer as mpl 
 from matplotlib.patches import Patch
 from matplotlib.colors import ListedColormap
 from matplotlib.axes import Axes
@@ -35,7 +36,7 @@ def build_cmap(x : Tuple[int, int, int], y: Tuple[int, int, int]) -> ListedColor
                             cmp_(np.linspace(1, 0, 128))))
     return ListedColormap(newcolors)
 
-def invert_orientation(x: np.array, y: np.array, PITCH_X: int) -> Tuple[np.array, np.array]:
+def invert_orientation(x: np.array, y: np.array, PITCH_X: int, PITCH_Y: int) -> Tuple[np.array, np.array]:
     """Invert the orientation of the pitch coordinates.
 
     Args:
@@ -47,9 +48,21 @@ def invert_orientation(x: np.array, y: np.array, PITCH_X: int) -> Tuple[np.array
         Tuple[np.array, np.array]: Inverted x and y coordinates
     """
     x_flipped_orientation = PITCH_X - x
-    y_flipped_orientation = y
+    y_flipped_orientation = PITCH_Y - y
 
     return (x_flipped_orientation, y_flipped_orientation)
+
+def invert_one_orientation(orientation: np.array, PITCH_DIM: int) -> np.array:
+    """Invert one orientation of the pitch coordinates.
+
+    Args:
+        orientation (np.array): x or y-coordinates of the events
+        PITCH_DIM (int): Width or height of the pitch
+
+    Returns:
+        np.array: Inverted x or y coordinates
+    """
+    return PITCH_DIM - orientation
 
 def add_legend(ax: Axes, num_elements: int, colors: list[str], labels: list[str]) -> None:
     """Add a legend to the mpl pitch plot
@@ -65,28 +78,13 @@ def add_legend(ax: Axes, num_elements: int, colors: list[str], labels: list[str]
     
     ax.legend(handles=legend_elements, loc='upper right')
 
-def extract_team_from_tactics(tactics: pl.DataFrame) -> pl.DataFrame:
+def plot_player_positions(x: np.array, y: np.array, jerseys: list[str], names: list[str], pitch: mpl.Pitch, ax: Axes, color: str, fontsize: int, alpha: float, offset: float) -> None:
+    # Plot player positions
+    pitch.scatter(x, y, s=300, c=color, edgecolors='black', linewidth=1.5, ax=ax, zorder=3)
 
-    players_df = (
-        tactics
-        .with_columns(
-            pl.col("tactics").struct.field("lineup").alias("lineup")
-        )
-        .with_row_count("team_idx")  # 0 for first team, 1 for second team
-        .explode("lineup")
-        .select([
-            pl.col("lineup").struct.field("jersey_number").alias("jersey_number"),
-            pl.col("lineup").struct.field("player").struct.field("id").alias("player_id"),
-            pl.col("lineup").struct.field("player").struct.field("name").alias("player_name"),
-            pl.col("team_idx")
-        ])
-        .with_columns(
-            pl.when(pl.col("team_idx") == 0).then(pl.lit("France"))
-            .otherwise(pl.lit("Argentina"))
-            .alias("team")
-        )
-        .drop("team_idx")
-    )
-
-    return players_df
-
+    # Add jersey numbers and player names 
+    for xi, yi, num, name in zip(x, y, jerseys, names):
+        ax.text(xi, yi, str(num), ha='center', va='center',
+                color='white', fontsize=10, fontweight='bold', zorder=4)
+        ax.text(xi, yi + 3.5, name, ha='center', va='bottom',
+                color='black', fontsize=8, zorder=5)
