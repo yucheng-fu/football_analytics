@@ -18,3 +18,6 @@ diverging_r = build_cmap(red, blue)
 
 # plotting settings
 figsize = (9, 6)
+
+# expected goal scale factor
+xg_scale_factor = 400  

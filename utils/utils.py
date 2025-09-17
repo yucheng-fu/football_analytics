@@ -100,3 +100,32 @@ def plot_player_positions(x: np.array, y: np.array, jerseys: list[str], names: l
 
     plt.title("Average player positions based on events", fontsize=fontsize)
     plt.show()
+
+def plot_pitch_with_shots(ax: Axes, team_shots_x: np.array, team_shots_y: np.array, team_goal_x: np.array, team_goal_y: np.array, team_shots_xg: np.array, xg_scale_factor: float, color: str) -> None:
+    """Plot the pitch with shots and goals.
+
+    Args:
+        ax (Axes): Axes object
+        team_shots_x (np.array): x-coordinates of team shots
+        team_shots_y (np.array): y-coordinates of team shots 
+        team_goal_x (np.array): x-coordinates of team goals
+        team_goal_y (np.array): y-coordinates of team goals
+        team_shots_xg (np.array): xG values of team shots
+        xg_scale_factor (float): Scale factor for xG values
+        color (str): Color for the shots and goals
+    """
+    ax.scatter(team_shots_x, team_shots_y, color=color, alpha=0.5, label='Shots')
+    star_sizes = xg_scale_factor * team_shots_xg
+    ax.scatter(team_goal_x, team_goal_y, color=color, marker='*', s=star_sizes, edgecolor='black', label='Goals (scaled by xG)')
+
+    for x, y, xg in zip(team_goal_x, team_goal_y, team_shots_xg):
+        ax.text(
+            x, y - 1.5,                      
+            f"{xg:.4f}",                     
+            ha='center', va='bottom', fontsize=8,
+            color='black',
+            zorder=5
+        )
+
+    plt.legend(loc='upper right')
+    plt.show()
