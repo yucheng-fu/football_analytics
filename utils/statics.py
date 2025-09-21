@@ -21,3 +21,6 @@ figsize = (9, 6)
 
 # expected goal scale factor
 xg_scale_factor = 400  
+
+# gmm components
+gmm_n_components = 8
