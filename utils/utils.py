@@ -2,11 +2,13 @@
 import numpy as np
 import polars as pl
 import mplsoccer as mpl 
-from matplotlib.patches import Patch
+from matplotlib.patches import Ellipse, Patch
 from matplotlib.colors import ListedColormap
 from matplotlib.axes import Axes
 from typing import Tuple
 import matplotlib.pyplot as plt
+from sklearn.mixture import GaussianMixture
+from scipy.stats import multivariate_normal
 
 def build_cmap(x : Tuple[int, int, int], y: Tuple[int, int, int]) -> ListedColormap:
     """Build cmap for Matplotlib
@@ -129,3 +131,51 @@ def plot_pitch_with_shots(ax: Axes, team_shots_x: np.array, team_shots_y: np.arr
 
     plt.legend(loc='upper right')
     plt.show()
+
+def plot_gmm_components(gmm: GaussianMixture, ax: Axes, color: str) -> None:
+    """Plot GMM components as ellipses on the pitch.
+
+    Args:
+        gmm (GaussianMixture): Fitted Gaussian Mixture Model
+        ax (Axes): Axes object
+        pitch (mpl.Pitch): Pitch object
+        color (str): Color for the ellipses 
+    """
+
+    for i in range(gmm.n_components):
+            mean = gmm.means_[i]
+            cov = gmm.covariances_[i]
+            eig_val, eig_vec = np.linalg.eig(cov)
+            angle = np.arctan2(*eig_vec[:,0][::-1])
+            e = Ellipse(mean,
+                        2*np.sqrt(eig_val[0]), 
+                        2*np.sqrt(eig_val[1]), 
+                        angle=np.degrees(angle),
+                        color=color)
+            e.set_alpha(0.5)
+            ax.add_artist(e)
+
+def evaluate_and_plot_gmm_pdf(ax: Axes, gmm: GaussianMixture, PITCH_X: int, PITCH_Y: int, cmap: str) -> None:
+    """Evaluate and plot the GMM probability density function (PDF) on the given axes.
+
+    Args:
+        ax (Axes): The axes to plot on.
+        gmm (GaussianMixture): The fitted Gaussian Mixture Model.
+        PITCH_X (int): The width of the pitch.
+        PITCH_Y (int): The height of the pitch.
+    """
+    xx, yy = np.meshgrid(np.linspace(0, PITCH_X, 120),
+                     np.linspace(0, PITCH_Y, 80))
+
+    Z = np.zeros((xx.shape[0], xx.shape[1], gmm.n_components))
+    for i, (mean, covariance, weight) in enumerate(zip(gmm.means_, gmm.covariances_, gmm.weights_)):
+          
+        Z[:,:,i] = weight * multivariate_normal.pdf(
+        np.column_stack([xx.ravel(), yy.ravel()]).reshape(
+            xx.shape + (2,)), mean=mean, cov=covariance)
+
+    Z = Z.sum(axis=-1)
+    Z = Z.reshape(xx.shape)
+
+    ax.contourf(xx, yy, Z, levels=10,
+                   cmap=cmap, alpha=0.8, antialiased=True)
