@@ -164,18 +164,22 @@ def evaluate_and_plot_gmm_pdf(ax: Axes, gmm: GaussianMixture, PITCH_X: int, PITC
         PITCH_X (int): The width of the pitch.
         PITCH_Y (int): The height of the pitch.
     """
-    xx, yy = np.meshgrid(np.linspace(0, PITCH_X, 120),
-                     np.linspace(0, PITCH_Y, 80))
+    x_vals = np.linspace(0, PITCH_X, PITCH_X)
+    y_vals = np.linspace(0, PITCH_Y, PITCH_Y)
 
-    Z = np.zeros((xx.shape[0], xx.shape[1], gmm.n_components))
-    for i, (mean, covariance, weight) in enumerate(zip(gmm.means_, gmm.covariances_, gmm.weights_)):
-          
-        Z[:,:,i] = weight * multivariate_normal.pdf(
-        np.column_stack([xx.ravel(), yy.ravel()]).reshape(
-            xx.shape + (2,)), mean=mean, cov=covariance)
+    xx, yy = np.meshgrid(x_vals, y_vals)
 
-    Z = Z.sum(axis=-1)
-    Z = Z.reshape(xx.shape)
+    num_components = gmm.n_components
+    density_components = np.zeros((yy.shape[0], xx.shape[1], num_components))
 
-    ax.contourf(xx, yy, Z, levels=10,
-                   cmap=cmap, alpha=0.8, antialiased=True)
+    grid_points = np.column_stack([xx.ravel(), yy.ravel()])
+
+    for i, (mean, covariance, weight) in enumerate(
+        zip(gmm.means_, gmm.covariances_, gmm.weights_)
+    ):
+        pdf_values = multivariate_normal.pdf(grid_points, mean=mean, cov=covariance)
+        density_components[:, :, i] = weight * pdf_values.reshape(xx.shape)
+
+    total_density = density_components.sum(axis=-1)
+
+    ax.contourf(xx, yy, total_density, levels=10, cmap=cmap, alpha=0.8, antialiased=True)

@@ -123,13 +123,13 @@ class GMMHandler():
         
         return team_events.filter((pl.col("type") == "Dribble") & (pl.col("dribble_outcome") == "Complete")).select("location", "dribble_outcome")
     
-    def get_optimal_number_of_compoents_using_bic(self, features: pl.DataFrame, max_components: int = 50) -> int:
+    def get_optimal_number_of_compoents_using_bic(self, features: pl.DataFrame, max_components: int = 50, random_state: int = 42) -> int:
 
         n_components_range = range(1, max_components)
         bic = []
 
         for n_components in n_components_range:
-            gmm = GaussianMixture(n_components=n_components)
+            gmm = GaussianMixture(n_components=n_components, random_state=42)
             gmm.fit(features)
             bic.append(gmm.bic(features))
 
