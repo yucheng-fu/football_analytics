@@ -89,7 +89,7 @@ def add_legend(ax: Axes, num_elements: int, colors: list[str], labels: list[str]
         ]
     ax.legend(handles=legend_elements, loc='upper right')
 
-def plot_player_positions(x: np.array, y: np.array, jerseys: list[str], names: list[str], pitch: mpl.Pitch, ax: Axes, color: str, fontsize: int, alpha: float, offset: float) -> None:
+def plot_player_positions(x: np.array, y: np.array, jerseys: list[str], names: list[str], pitch: mpl.Pitch, ax: Axes, color: str, fontsize: int, fig_name: str) -> None:
     # Plot player positions
     pitch.scatter(x, y, s=300, c=color, edgecolors='black', linewidth=1.5, ax=ax, zorder=3)
 
@@ -101,9 +101,10 @@ def plot_player_positions(x: np.array, y: np.array, jerseys: list[str], names: l
                 color='black', fontsize=8, zorder=5)
 
     plt.title("Average player positions based on events", fontsize=fontsize)
+    plt.savefig(fig_name, dpi=300, bbox_inches='tight')
     plt.show()
 
-def plot_pitch_with_shots(ax: Axes, team_shots_x: np.array, team_shots_y: np.array, team_goal_x: np.array, team_goal_y: np.array, team_shots_xg: np.array, xg_scale_factor: float, color: str) -> None:
+def plot_pitch_with_shots(ax: Axes, team_shots_x: np.array, team_shots_y: np.array, team_goal_x: np.array, team_goal_y: np.array, team_shots_xg: np.array, xg_scale_factor: float, color: str, fig_name: str) -> None:
     """Plot the pitch with shots and goals.
 
     Args:
@@ -130,9 +131,11 @@ def plot_pitch_with_shots(ax: Axes, team_shots_x: np.array, team_shots_y: np.arr
         )
 
     plt.legend(loc='upper right')
+    plt.title("Shots and Goals (scaled by xG)")
+    plt.savefig(fig_name, dpi=300, bbox_inches='tight')
     plt.show()
 
-def plot_gmm_components(gmm: GaussianMixture, ax: Axes, color: str) -> None:
+def plot_gmm_components(gmm: GaussianMixture, ax: Axes, color: str, fig_name: str) -> None:
     """Plot GMM components as ellipses on the pitch.
 
     Args:
@@ -155,7 +158,11 @@ def plot_gmm_components(gmm: GaussianMixture, ax: Axes, color: str) -> None:
             e.set_alpha(0.5)
             ax.add_artist(e)
 
-def evaluate_and_plot_gmm_pdf(ax: Axes, gmm: GaussianMixture, PITCH_X: int, PITCH_Y: int, cmap: str) -> None:
+    plt.title("GMM Components for possession-related events")
+    plt.savefig(fig_name, dpi=300, bbox_inches='tight')
+    plt.show()
+
+def evaluate_and_plot_gmm_pdf(ax: Axes, gmm: GaussianMixture, PITCH_X: int, PITCH_Y: int, cmap: str, fig_name: str) -> None:
     """Evaluate and plot the GMM probability density function (PDF) on the given axes.
 
     Args:
@@ -183,3 +190,6 @@ def evaluate_and_plot_gmm_pdf(ax: Axes, gmm: GaussianMixture, PITCH_X: int, PITC
     total_density = density_components.sum(axis=-1)
 
     ax.contourf(xx, yy, total_density, levels=10, cmap=cmap, alpha=0.8, antialiased=True)
+    plt.title("GMM Probability Density Function (PDF) for possession-related events")
+    plt.savefig(fig_name, dpi=300, bbox_inches='tight')
+    plt.show()
