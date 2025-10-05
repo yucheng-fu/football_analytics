@@ -2,11 +2,13 @@
 import numpy as np
 import polars as pl
 import mplsoccer as mpl 
-from matplotlib.patches import Patch
+from matplotlib.patches import Ellipse, Patch
 from matplotlib.colors import ListedColormap
 from matplotlib.axes import Axes
 from typing import Tuple
 import matplotlib.pyplot as plt
+from sklearn.mixture import GaussianMixture
+from scipy.stats import multivariate_normal
 
 def build_cmap(x : Tuple[int, int, int], y: Tuple[int, int, int]) -> ListedColormap:
     """Build cmap for Matplotlib
@@ -87,7 +89,7 @@ def add_legend(ax: Axes, num_elements: int, colors: list[str], labels: list[str]
         ]
     ax.legend(handles=legend_elements, loc='upper right')
 
-def plot_player_positions(x: np.array, y: np.array, jerseys: list[str], names: list[str], pitch: mpl.Pitch, ax: Axes, color: str, fontsize: int, alpha: float, offset: float) -> None:
+def plot_player_positions(x: np.array, y: np.array, jerseys: list[str], names: list[str], pitch: mpl.Pitch, ax: Axes, color: str, fontsize: int, fig_name: str) -> None:
     # Plot player positions
     pitch.scatter(x, y, s=300, c=color, edgecolors='black', linewidth=1.5, ax=ax, zorder=3)
 
@@ -99,9 +101,10 @@ def plot_player_positions(x: np.array, y: np.array, jerseys: list[str], names: l
                 color='black', fontsize=8, zorder=5)
 
     plt.title("Average player positions based on events", fontsize=fontsize)
+    plt.savefig(fig_name, dpi=300, bbox_inches='tight')
     plt.show()
 
-def plot_pitch_with_shots(ax: Axes, team_shots_x: np.array, team_shots_y: np.array, team_goal_x: np.array, team_goal_y: np.array, team_shots_xg: np.array, xg_scale_factor: float, color: str) -> None:
+def plot_pitch_with_shots(ax: Axes, team_shots_x: np.array, team_shots_y: np.array, team_goal_x: np.array, team_goal_y: np.array, team_shots_xg: np.array, xg_scale_factor: float, color: str, fig_name: str) -> None:
     """Plot the pitch with shots and goals.
 
     Args:
@@ -128,4 +131,65 @@ def plot_pitch_with_shots(ax: Axes, team_shots_x: np.array, team_shots_y: np.arr
         )
 
     plt.legend(loc='upper right')
+    plt.title("Shots and Goals (scaled by xG)")
+    plt.savefig(fig_name, dpi=300, bbox_inches='tight')
+    plt.show()
+
+def plot_gmm_components(gmm: GaussianMixture, ax: Axes, color: str, fig_name: str) -> None:
+    """Plot GMM components as ellipses on the pitch.
+
+    Args:
+        gmm (GaussianMixture): Fitted Gaussian Mixture Model
+        ax (Axes): Axes object
+        pitch (mpl.Pitch): Pitch object
+        color (str): Color for the ellipses 
+    """
+
+    for i in range(gmm.n_components):
+            mean = gmm.means_[i]
+            cov = gmm.covariances_[i]
+            eig_val, eig_vec = np.linalg.eig(cov)
+            angle = np.arctan2(*eig_vec[:,0][::-1])
+            e = Ellipse(mean,
+                        2*np.sqrt(eig_val[0]), 
+                        2*np.sqrt(eig_val[1]), 
+                        angle=np.degrees(angle),
+                        color=color)
+            e.set_alpha(0.5)
+            ax.add_artist(e)
+
+    plt.title("GMM Components for possession-related events")
+    plt.savefig(fig_name, dpi=300, bbox_inches='tight')
+    plt.show()
+
+def evaluate_and_plot_gmm_pdf(ax: Axes, gmm: GaussianMixture, PITCH_X: int, PITCH_Y: int, cmap: str, fig_name: str) -> None:
+    """Evaluate and plot the GMM probability density function (PDF) on the given axes.
+
+    Args:
+        ax (Axes): The axes to plot on.
+        gmm (GaussianMixture): The fitted Gaussian Mixture Model.
+        PITCH_X (int): The width of the pitch.
+        PITCH_Y (int): The height of the pitch.
+    """
+    x_vals = np.linspace(0, PITCH_X, PITCH_X)
+    y_vals = np.linspace(0, PITCH_Y, PITCH_Y)
+
+    xx, yy = np.meshgrid(x_vals, y_vals)
+
+    num_components = gmm.n_components
+    density_components = np.zeros((yy.shape[0], xx.shape[1], num_components))
+
+    grid_points = np.column_stack([xx.ravel(), yy.ravel()])
+
+    for i, (mean, covariance, weight) in enumerate(
+        zip(gmm.means_, gmm.covariances_, gmm.weights_)
+    ):
+        pdf_values = multivariate_normal.pdf(grid_points, mean=mean, cov=covariance)
+        density_components[:, :, i] = weight * pdf_values.reshape(xx.shape)
+
+    total_density = density_components.sum(axis=-1)
+
+    ax.contourf(xx, yy, total_density, levels=10, cmap=cmap, alpha=0.8, antialiased=True)
+    plt.title("GMM Probability Density Function (PDF) for possession-related events")
+    plt.savefig(fig_name, dpi=300, bbox_inches='tight')
     plt.show()
