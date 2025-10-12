@@ -1,4 +1,3 @@
-from utils.statics import (GRID_X, GRID_Y, PITCH_X, PITCH_Y)
 import numpy as np
 
 
