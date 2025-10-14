@@ -9,9 +9,19 @@ class ShotsHandler:
         self.team_non_goals = self.get_non_goals_from_shots()
 
     def get_non_goals_from_shots(self) -> pl.DataFrame:
+        """Returns all shots that did not result in a goal
+
+        Returns:
+            pl.DataFrame: Dataframe of non-goal shot events
+        """
         return self.team_shots_events.filter(pl.col("shot_outcome") != "Goal")
 
     def get_goals_from_shots(self) -> pl.DataFrame:
+        """Returns all shots that results in a goal
+
+        Returns:
+            pl.DataFrame: Dataframe of goal events
+        """
         return self.team_shots_events.filter(pl.col("shot_outcome") == "Goal")
 
     def compute_goal_x_y_locations(self) -> tuple[float, float]:
