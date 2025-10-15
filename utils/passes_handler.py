@@ -29,9 +29,20 @@ class PassesHandler:
             angle = self.parse_pass_angle(passes)
             duration = self.parse_pass_duration(passes)
             outcome = self.parse_pass_outcome(passes)
+            match_ids_array = np.full(len(start_x), match_id)
 
             features = np.vstack(
-                [start_x, start_y, end_x, end_y, height, angle, duration, outcome]
+                [
+                    match_ids_array,
+                    start_x,
+                    start_y,
+                    end_x,
+                    end_y,
+                    height,
+                    angle,
+                    duration,
+                    outcome,
+                ]
             ).T
 
             all_features.extend(features)
@@ -39,6 +50,7 @@ class PassesHandler:
         df = pl.DataFrame(
             all_features,
             schema=[
+                "match_id",
                 "start_x",
                 "start_y",
                 "end_x",
