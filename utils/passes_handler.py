@@ -25,9 +25,12 @@ class PassesHandler:
             end_x, end_y = self.parse_pass_location(
                 passes, col_name="pass_end_location"
             )
+            length = self.parse_pass_length(passes)
             height = self.parse_pass_height(passes)
             angle = self.parse_pass_angle(passes)
             duration = self.parse_pass_duration(passes)
+            body_part = self.parse_pass_body_part(passes)
+            under_pressure = self.parse_under_pressure(passes)
             outcome = self.parse_pass_outcome(passes)
             match_ids_array = np.full(len(start_x), match_id)
 
@@ -38,9 +41,12 @@ class PassesHandler:
                     start_y,
                     end_x,
                     end_y,
+                    length,
                     height,
                     angle,
                     duration,
+                    body_part,
+                    under_pressure,
                     outcome,
                 ]
             ).T
@@ -55,9 +61,12 @@ class PassesHandler:
                 "start_y",
                 "end_x",
                 "end_y",
+                "length",
                 "height",
                 "angle",
                 "duration",
+                "body_part",
+                "under_pressure",
                 "outcome",
             ],
         )
@@ -96,6 +105,39 @@ class PassesHandler:
         return np.array(
             passes.select(pl.col(col_name)).to_series().to_list()
         ).transpose()
+
+    def parse_pass_length(self, passes: pl.DataFrame) -> list[float]:
+        """Parsing length of the pass
+
+        Args:
+            passes (pl.DataFrame): passes DataFrame
+
+        Returns:
+            list[float]: List of pass lengths
+        """
+        return passes.select(pl.col("pass_length")).to_series().to_list()
+
+    def parse_pass_body_part(self, passes: pl.DataFrame) -> list[str]:
+        """Parsing the body part of the pass
+
+        Args:
+            passes (pl.DataFrame): passes DataFrame
+
+        Returns:
+            list[str]: List of pass body parts
+        """
+        return passes.select(pl.col("pass_body_part")).to_series().to_list()
+
+    def parse_under_pressure(self, passes: pl.DataFrame) -> list[bool]:
+        """Parsing whether the pass was made under pressure
+
+        Args:
+            passes (pl.DataFrame): passes DataFrame
+
+        Returns:
+            list[bool]: List of whether the pass was made under pressure
+        """
+        return passes.select(pl.col("under_pressure")).to_series().to_list()
 
     def parse_pass_duration(self, passes: pl.DataFrame) -> list[float]:
         """Parsing duration of the pass
