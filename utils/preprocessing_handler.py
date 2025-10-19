@@ -17,11 +17,17 @@ class PreprocessingHandler:
 
         self.df = self.df.with_columns(pl.col("under_pressure").fill_null(False))
 
+        return self.df
+
+    def preprocess_outcome_column(self) -> pl.DataFrame:
+        """Binary encode the outcome column in the DataFrame
+
+        Returns:
+            pl.DataFrame: DataFrame with binary encoded outcome column
+        """
+
         self.df = self.df.with_columns(
-            pl.when(pl.col("outcome").is_null())
-            .then(1)  # Completed
-            .otherwise(0)  # Incompleted
-            .alias("outcome")
+            pl.when(pl.col("outcome").is_null()).then(1).otherwise(0).alias("outcome")
         )
 
         return self.df

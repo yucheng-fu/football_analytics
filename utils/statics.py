@@ -19,6 +19,9 @@ red = [x / 256 for x in red]
 diverging = build_cmap(blue, red)
 diverging_r = build_cmap(red, blue)
 
+# France-Argentina match id
+france_argentina_match_id = 7580
+
 # plotting settings
 figsize = (9, 6)
 
