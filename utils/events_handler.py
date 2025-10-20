@@ -1,6 +1,7 @@
-import polars as pl
-import numpy as np
 from typing import Tuple
+
+import numpy as np
+import polars as pl
 
 
 class EventsHandler:

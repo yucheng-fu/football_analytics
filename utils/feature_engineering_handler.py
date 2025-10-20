@@ -2,7 +2,6 @@ import polars as pl
 
 
 class FeatureEngineeringHandler:
-
     def __init__(self, train_df: pl.DataFrame):
         self.train_df = train_df
 

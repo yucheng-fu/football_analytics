@@ -1,12 +1,12 @@
+from typing import Tuple
+
+import numpy as np
 import polars as pl
 from statsbombpy import sb
-import numpy as np
-from typing import Tuple
 from tqdm import tqdm
 
 
 class PassesHandler:
-
     def __init__(self, match_ids: list[int]):
         self.match_ids = match_ids
 

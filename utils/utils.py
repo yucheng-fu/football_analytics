@@ -1,12 +1,13 @@
-import numpy as np
-import mplsoccer as mpl
-from matplotlib.patches import Ellipse, Patch
-from matplotlib.colors import ListedColormap
-from matplotlib.axes import Axes
 from typing import Tuple
+
 import matplotlib.pyplot as plt
-from sklearn.mixture import GaussianMixture
+import mplsoccer as mpl
+import numpy as np
+from matplotlib.axes import Axes
+from matplotlib.colors import ListedColormap
+from matplotlib.patches import Ellipse, Patch
 from scipy.stats import multivariate_normal
+from sklearn.mixture import GaussianMixture
 
 
 def build_cmap(x: Tuple[int, int, int], y: Tuple[int, int, int]) -> ListedColormap:

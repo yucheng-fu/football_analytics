@@ -1,4 +1,5 @@
 import numpy as np
+
 from utils.utils import build_cmap
 
 # Pitch dimensions and grid settings

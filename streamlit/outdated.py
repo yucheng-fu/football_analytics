@@ -1,10 +1,10 @@
-import streamlit as st
-from statsbombpy import sb
 import mplsoccer as mpl
 import numpy as np
 import pandas as pd
-
 from matplotlib.colors import ListedColormap
+from statsbombpy import sb
+
+import streamlit as st
 
 
 def bulid_cmap(x, y):

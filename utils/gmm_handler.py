@@ -1,9 +1,11 @@
-import polars as pl
-import numpy as np
-from sklearn.mixture import GaussianMixture
-from utils.utils import invert_orientation
-from utils.statics import PITCH_X, PITCH_Y
 from typing import Tuple
+
+import numpy as np
+import polars as pl
+from sklearn.mixture import GaussianMixture
+
+from utils.statics import PITCH_X, PITCH_Y
+from utils.utils import invert_orientation
 
 
 class GMMHandler:
