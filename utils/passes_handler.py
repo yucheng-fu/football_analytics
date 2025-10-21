@@ -72,7 +72,8 @@ class PassesHandler:
         )
 
         # save to csv
-        df.write_csv("../data/02-analysis/passes.csv")
+        # df.write_csv("../data/02-analysis/passes.csv")
+        df.write_parquet("../data/02-analysis/passes.parquet")
 
         return df
 
