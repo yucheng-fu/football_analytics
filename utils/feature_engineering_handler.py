@@ -1,9 +1,10 @@
 import polars as pl
+from sklearn.base import BaseEstimator, TransformerMixin
 
 
 class FeatureEngineeringHandler:
-    def __init__(self, train_df: pl.DataFrame):
-        self.train_df = train_df
+    def __init__(self, X: pl.DataFrame):
+        self.X = X
 
     def encode_columns(self, columns: list[str]) -> pl.DataFrame:
         """Encode categorical columns using one-hot encoding
@@ -13,7 +14,7 @@ class FeatureEngineeringHandler:
         """
 
         for col in columns:
-            dummies = self.train_df.select(pl.col(col)).to_dummies()
-            self.train_df = self.train_df.hstack(dummies).drop(pl.col(col))
+            dummies = self.X.select(pl.col(col)).to_dummies()
+            self.X = self.X.hstack(dummies).drop(pl.col(col))
 
-        return self.train_df
+        return self.X

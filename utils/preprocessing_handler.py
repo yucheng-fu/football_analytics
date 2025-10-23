@@ -31,3 +31,54 @@ class PreprocessingHandler:
         )
 
         return self.df
+
+    def preprocess_length_column(self) -> pl.DataFrame:
+        """Convert from yard to meter
+
+        Returns:
+            pl.DataFrame: DataFrame with length column converted to meters
+        """
+        self.df = self.df.with_columns((pl.col("length") * 0.9144).alias("length"))
+        return self.df
+
+    def preprocess_log_velocity_column(self) -> pl.DataFrame:
+        """Calculate log-velocity and add as a new column
+
+        Returns:
+            pl.DataFrame: DataFrame with log-velocity column added
+        """
+        self.df = self.df.with_columns(
+            pl.when(pl.col("duration") != 0)
+            .then(pl.col("length") / pl.col("duration"))
+            .otherwise(0)
+            .log1p()
+            .alias("log_velocity")
+        )
+        return self.df
+
+    def preprocess_columns_with_log1p(self) -> pl.DataFrame:
+        """Apply log1p transformation to specified columns
+
+        Returns:
+            pl.DataFrame: DataFrame with specified columns log1p transformed
+        """
+        for col in ["length", "duration"]:
+            self.df = self.df.with_columns(pl.col(col).log1p().alias(f"log_{col}"))
+        return self.df
+
+    def preprocess_angle_column(self) -> pl.DataFrame:
+        """Create sine and cosine features from angle column
+
+        Returns:
+            pl.DataFrame: DataFrame with angle_sin and angle_cos columns added
+        """
+        self.df = self.df.with_columns(
+            [
+                pl.col("angle").sin().alias("angle_sin"),
+                pl.col("angle").cos().alias("angle_cos"),
+            ]
+        )
+
+        self.df = self.df.drop(pl.col("angle"))
+
+        return self.df
