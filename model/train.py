@@ -4,7 +4,7 @@ from xgboost import XGBClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 import optuna.trial as trial
 import optuna
-from utils.statics import xgboost_model_name
+from utils.statics import xgboost_model_name, lightgbm_model_name
 import xgboost as xgb
 
 
@@ -35,10 +35,35 @@ class XGBoostTrainer:
                 "subsample": trial.suggest_float(
                     "subsample", 0.5, 1.0
                 ),  # fraction of samples to be used for each tree
-                "eval_metric": "logloss",  # evaluation metric
                 "alpha": trial.suggest_float("alpha", 0.0, 1.0),  # L1 regularisation
                 "lambda": trial.suggest_float("lambda", 0.0, 1.0),  # L2 regularisation
+                "eval_metric": "logloss",  # evaluation metric
                 "random_state": 165,  # seed for reproducibility
+            }
+
+        elif self.model_type == lightgbm_model_name:
+            return {
+                "n_estimators": trial.suggest_int(
+                    "n_estimators", 50, 1000
+                ),  # number of trees
+                "max_depth": trial.suggest_int(
+                    "max_depth", 3, 16
+                ),  # maximum depth of each tree
+                "learning_rate": trial.suggest_float(
+                    "learning_rate", 0.01, 0.3
+                ),  # step size for optimisation
+                "subsample": trial.suggest_float(
+                    "subsample", 0.5, 1.0
+                ),  # fraction of samples to be used for each tree
+                "reg_alpha": trial.suggest_float(
+                    "reg_alpha", 0.0, 1.0
+                ),  # L1 regularisation
+                "reg_lambda": trial.suggest_float(
+                    "reg_lambda", 0.0, 1.0
+                ),  # L2 regularisation
+                "metric": "binary_logloss",  # evaluation metric
+                "random_state": 165,  # seed for reproducibility
+                "verbose": -1,  # suppress warnings and info
             }
 
         raise ValueError(f"Unsupported model type: {self.model_type}")

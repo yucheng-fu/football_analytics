@@ -31,3 +31,4 @@ xg_scale_factor = 400
 
 # model names
 xgboost_model_name = "xgboost"
+lightgbm_model_name = "lightgbm"
