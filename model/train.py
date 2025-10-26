@@ -1,3 +1,5 @@
+from typing import Tuple
+
 import polars as pl
 from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
@@ -112,7 +114,9 @@ class ModelTrainer:
 
         return mean_score
 
-    def tune_and_train(self, X_train, y_train):
+    def tune_and_train(
+        self, X_train: pl.DataFrame, y_train: pl.DataFrame
+    ) -> Tuple[dict, np.ndarray]:
 
         with mlflow.start_run() as run:
 
@@ -176,7 +180,7 @@ class ModelTrainer:
         #
         best_idx = np.argmax(outer_cv_scores)
 
-        return outer_cv_params[best_idx], outer_cv_features
+        return (outer_cv_params[best_idx], outer_cv_features[best_idx])
 
 
 if __name__ == "__main__":
