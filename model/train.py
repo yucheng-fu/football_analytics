@@ -36,7 +36,7 @@ class ModelTrainer:
 
         raise ValueError(f"Unsupported model type: {self.model_type}")
 
-    def fetch_param_suggestions(self) -> dict:
+    def fetch_param_suggestions(self, trial: trial) -> dict:
         if self.model_type == xgboost_model_name:
             return {
                 "n_estimators": trial.suggest_int(
@@ -84,68 +84,47 @@ class ModelTrainer:
 
         raise ValueError(f"Unsupported model type: {self.model_type}")
 
-    def _objective(self, trial: trial.Trial, X_train_outer, y_train_outer):
+    def _objective(self, trial: optuna.Trial, X_train_outer, y_train_outer):
+        # fetch params for the trial based on the model
+        params = self.fetch_param_suggestions(trial)
+        base_estimator = self.fetch_model()
+        base_estimator.set_params(**params)
 
-        # Get a set of hyperparameters depending on the model type
-        params = self.fetch_param_suggestions()
+        inner_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+        rfecv = RFECV(
+            estimator=base_estimator,
+            step=1,
+            cv=inner_cv,
+            scoring="neg_log_loss",
+            n_jobs=-1,
+        )
 
-        inner_cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+        # perform inner CV and get mean_score of best subset of features
+        rfecv.fit(X_train_outer, y_train_outer)
+        mean_score = np.max(
+            rfecv.cv_results_["mean_test_score"]
+        )  # max to get the score of the max neg_log_loss
 
-        scores = []
-
+        # log to mlflow
         with mlflow.start_run(nested=True):
-
-            for train_idx, val_idx in inner_cv.split(X_train_outer, y_train_outer):
-                X_train_inner, X_val_inner = (
-                    X_train_outer[train_idx],
-                    X_train_outer[val_idx],
-                )
-                y_train_inner, y_val_inner = (
-                    y_train_outer[train_idx],
-                    y_train_outer[val_idx],
-                )
-
-                base_estimator = self.fetch_model()
-                base_estimator.set_params(**params)
-
-                rfecv = RFECV(
-                    estimator=base_estimator,
-                    step=1,
-                    cv=inner_cv,
-                    scoring="neg_log_loss",
-                    n_jobs=-1,
-                )
-
-                pipeline = Pipeline(steps=[("feature_selection", rfecv)])
-                pipeline.fit(X_train_inner, y_train_inner)
-                score = cross_val_score(
-                    pipeline,
-                    X_val_inner,
-                    y_val_inner,
-                    cv=inner_cv,
-                    scoring="neg_log_loss",
-                    n_jobs=-1,
-                )
-                scores.append(score.max())
-
-            mean_score = np.mean(scores)
-
             mlflow.log_params(params)
             mlflow.log_metric("neg_log_loss", mean_score)
 
-            return mean_score
+        return mean_score
 
-    def train(self, X_train, y_train):
+    def tune_and_train(self, X_train, y_train):
 
         with mlflow.start_run() as run:
 
             outer_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
             outer_cv_scores = []
+            outer_cv_params = []
+            outer_cv_features = []
             for i, (train_idx, val_idx) in enumerate(outer_cv.split(X_train, y_train)):
                 X_train_outer, X_val_outer = X_train[train_idx], X_train[val_idx]
                 y_train_outer, y_val_outer = y_train[train_idx], y_train[val_idx]
 
-                study = optuna.create_study(direction="minimize")
+                study = optuna.create_study(direction="maximize")
 
                 study.optimize(
                     lambda trial: self._objective(trial, X_train_outer, y_train_outer),
@@ -156,13 +135,17 @@ class ModelTrainer:
 
                 best_params = study.best_params
 
+                # Fit model on outer training fold
                 final_estimator = self.fetch_model()
                 final_estimator.set_params(**best_params)
 
+                final_rfe_cv = StratifiedKFold(
+                    n_splits=5, shuffle=True, random_state=42
+                )
                 rfecv = RFECV(
                     estimator=final_estimator,
                     step=1,
-                    cv=outer_cv,
+                    cv=final_rfe_cv,
                     scoring="neg_log_loss",
                     n_jobs=-1,
                 )
@@ -172,28 +155,28 @@ class ModelTrainer:
                 selected_feature_mask = rfecv.get_support(indices=True)
                 selected_features = X_train.columns[selected_feature_mask]
 
-                final_model = self.fetch_model()
-                final_model.set_params(best_params)
-
-                final_model.fit(X_train_outer[selected_features], y_train_outer)
-
+                # predict
+                final_model = rfecv.estimator_
                 y_pred_proba = final_model.predict_proba(X_val_outer[selected_features])
 
                 outer_fold_log_loss = log_loss(y_val_outer, y_pred_proba)
-
                 outer_cv_scores.append(outer_fold_log_loss)
+                outer_cv_params.append(best_params)
+                outer_cv_features.append(selected_feature_mask)
 
-                with mlflow.start_run(nested=True):
+                with mlflow.start_run(nested=True, run_name=f"Outer_fold_{i+1}"):
                     # Log the final model
                     mlflow.log_param(
-                        "outer_selected_features", ",".join(selected_features)
+                        "outer_selected_features", ",".join(map(str, selected_features))
                     )
                     mlflow.log_metric("outer_log_loss", outer_fold_log_loss)
-                    mlflow.log_metric("params", best_params)
+                    mlflow.log_params("params", best_params)
                     mlflow.log_model(final_model, "model")
 
-            mean_outer_score = np.mean(outer_cv_scores)
-            std_outer_score = np.std(outer_cv_scores)
+        #
+        best_idx = np.argmax(outer_cv_scores)
+
+        return outer_cv_params[best_idx], outer_cv_features
 
 
 if __name__ == "__main__":
