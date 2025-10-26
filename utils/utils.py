@@ -1,4 +1,4 @@
-from typing import Tuple
+from typing import Tuple, List
 
 import matplotlib.pyplot as plt
 import mplsoccer as mpl
@@ -8,6 +8,10 @@ from matplotlib.colors import ListedColormap
 from matplotlib.patches import Ellipse, Patch
 from scipy.stats import multivariate_normal
 from sklearn.mixture import GaussianMixture
+import polars as pl
+import seaborn as sns
+
+from utils.statics import france_argentina_match_id
 
 
 def build_cmap(x: Tuple[int, int, int], y: Tuple[int, int, int]) -> ListedColormap:
@@ -270,4 +274,55 @@ def evaluate_and_plot_gmm_pdf(
     )
     plt.title("GMM Probability Density Function (PDF) for possession-related events")
     plt.savefig(fig_name, dpi=300, bbox_inches="tight")
+    plt.show()
+
+
+def split_train_test(passes_df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Split passes_df into train and test based on the match_id for the France-Argentina match
+
+    Args:
+        passes_df (pl.DataFrame): DataFrame containing pass events
+
+    Returns:
+        tuple[pl.DataFrame, pl.DataFrame]: Train and test DataFrames
+    """
+    train_df = passes_df.filter(pl.col("match_id") != france_argentina_match_id).drop(
+        pl.col("match_id")
+    )
+
+    test_df = passes_df.filter(pl.col("match_id") == france_argentina_match_id).drop(
+        pl.col("match_id")
+    )
+
+    return train_df, test_df
+
+
+def plot_correlations(train_df: pl.DataFrame, numerical_cols: List[str]) -> None:
+    """Plot correlation plot for continuous features
+
+    Args:
+        train_df (pl.DataFrame): Training DataFrame
+        continuous_cols (List[str]): List of column names for numerical features
+    """
+    corr_matrix = train_df.select(numerical_cols).to_pandas().corr()
+
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f")
+    plt.title("Correlation Matrix of Continuous Features")
+    plt.show()
+
+
+def plot_numerical_feature_distributions(
+    train_df: pl.DataFrame, numerical_cols: List[str]
+) -> None:
+    fig, ax = plt.subplots(3, 3, figsize=(12, 8), tight_layout=True)
+    ax = ax.ravel()
+
+    for i, column in enumerate(numerical_cols):
+        sns.histplot(
+            train_df.select(column).to_series(), bins="auto", kde=True, ax=ax[i]
+        )
+        ax[i].set_title(f"Distribution of {column}")
+        ax[i].set_xlabel(column)
+        ax[i].set_ylabel("Frequency")
     plt.show()

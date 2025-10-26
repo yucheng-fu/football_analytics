@@ -1,7 +1,5 @@
 import numpy as np
 
-from utils.utils import build_cmap
-
 # Pitch dimensions and grid settings
 GRID_X, GRID_Y = 16, 12
 PITCH_X, PITCH_Y = (
@@ -12,13 +10,6 @@ PITCH_X, PITCH_Y = (
 # bins
 x_bins = np.linspace(0, PITCH_X, GRID_X + 1)
 y_bins = np.linspace(0, PITCH_Y, GRID_Y + 1)
-
-# Color statics
-blue, red = (44, 123, 182), (215, 25, 28)
-blue = [x / 256 for x in blue]
-red = [x / 256 for x in red]
-diverging = build_cmap(blue, red)
-diverging_r = build_cmap(red, blue)
 
 # France-Argentina match id
 france_argentina_match_id = 7580
