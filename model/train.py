@@ -2,10 +2,11 @@ import polars as pl
 from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.feature_selection import RFECV
 import optuna.trial as trial
 import optuna
 from utils.statics import xgboost_model_name, lightgbm_model_name
-import xgboost as xgb
+import mlflow
 
 
 class XGBoostTrainer:
@@ -78,31 +79,43 @@ class XGBoostTrainer:
 
         scores = []
 
-        for train_idx, val_idx in inner_cv.split(X_train_outer, y_train_outer):
-            X_inner_train, X_inner_val = (
-                X_train_outer[train_idx],
-                X_train_outer[val_idx],
-            )
-            y_inner_train, y_inner_val = (
-                y_train_outer[train_idx],
-                y_train_outer[val_idx],
-            )
+        with mlflow.start_run(nested=True):
 
-            base_estimater = XGBClassifier(**params)
+            for train_idx, val_idx in inner_cv.split(X_train_outer, y_train_outer):
+                X_inner_train, X_inner_val = (
+                    X_train_outer[train_idx],
+                    X_train_outer[val_idx],
+                )
+                y_inner_train, y_inner_val = (
+                    y_train_outer[train_idx],
+                    y_train_outer[val_idx],
+                )
 
-            model = Pipeline(steps=[("xgboost", base_estimater)])
-            model.fit(X_inner_train, y_inner_train)
-            score = cross_val_score(model, X_inner_val, y_inner_val, cv=inner_cv)
-            scores.append(score.mean())
+                base_estimater = XGBClassifier(**params)
 
-        return scores
+                model = Pipeline(steps=[("xgboost", base_estimater)])
+                model.fit(X_inner_train, y_inner_train)
+                score = cross_val_score(model, X_inner_val, y_inner_val, cv=inner_cv)
+                scores.append(score.mean())
+
+                # log
+                mlflow.log_params(params)
+
+            return scores
 
     def train(self, X_train, y_train):
-        outer_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
-        for i, (train_idx, val_idx) in enumerate(outer_cv.split(X_train, y_train)):
-            X_train_outer, X_val_outer = X_train[train_idx], X_train[val_idx]
-            y_train_outer, y_val_outer = y_train[train_idx], y_train[val_idx]
 
-            inner_cv = StratifiedKFold(n_splits=10, shuffle=True, random_state=42)
+        with mlflow.start_run() as run:
 
-            study = optuna.create_study(direction="minimize")
+            outer_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+            for i, (train_idx, val_idx) in enumerate(outer_cv.split(X_train, y_train)):
+                X_train_outer, X_val_outer = X_train[train_idx], X_train[val_idx]
+                y_train_outer, y_val_outer = y_train[train_idx], y_train[val_idx]
+
+                study = optuna.create_study(direction="minimize")
+
+                study.optimize(
+                    lambda trial: self._objective(trial, X_train_outer, y_train_outer),
+                    n_trials=30,
+                    n_jobs=-1,
+                )
