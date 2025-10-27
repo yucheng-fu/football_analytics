@@ -4,7 +4,7 @@ import polars as pl
 from sklearn.pipeline import Pipeline
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+from sklearn.model_selection import StratifiedKFold
 from sklearn.feature_selection import RFECV
 from sklearn.metrics import log_loss
 import optuna.trial as trial
@@ -15,13 +15,23 @@ from utils.statics import (
     france_argentina_match_id,
 )
 import mlflow
+from optuna.integration.mlflow import MLflowCallback
 import numpy as np
 
 
 class ModelTrainer:
 
-    def __init__(self, model_type: str):
+    def __init__(
+        self,
+        model_type: str,
+        n_inner_splits: int = 10,
+        n_outer_splits: int = 5,
+        n_trials: int = 20,
+    ):
         self.model_type = model_type
+        self.n_inner_splits = n_inner_splits
+        self.n_outer_splits = n_outer_splits
+        self.n_trials = n_trials
 
     def set_params(
         self, model: XGBClassifier | LGBMClassifier, params: dict
@@ -90,7 +100,9 @@ class ModelTrainer:
         base_estimator = self.fetch_model()
         base_estimator.set_params(**params)
 
-        inner_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+        inner_cv = StratifiedKFold(
+            n_splits=self.n_inner_splits, shuffle=True, random_state=42
+        )
         rfecv = RFECV(
             estimator=base_estimator,
             step=1,
@@ -105,24 +117,23 @@ class ModelTrainer:
             rfecv.cv_results_["mean_test_score"]
         )  # max to get the score of the max neg_log_loss
 
-        # log to mlflow
-        with mlflow.start_run(nested=True, run_name="Inner_fold"):
-            mlflow.log_params(params)
-            mlflow.log_metric("neg_log_loss", mean_score)
-
         return mean_score
 
     def tune_and_train(
         self, X_train: pl.DataFrame, y_train: pl.DataFrame
     ) -> Tuple[dict, np.ndarray]:
 
-        print("Starting training with model {}")
+        print(
+            f"Starting training with model {self.model_type} with the following configuration: \n\t- {self.n_inner_splits} inner splits\n\t- {self.n_outer_splits} outer splits\n\t- {self.n_trials} trials"
+        )
 
         mlflow.set_tracking_uri("http://127.0.0.1:8080/")
         mlflow.set_experiment("Model selection and hyperparameter tuning")
-        with mlflow.start_run() as run:
+        with mlflow.start_run(run_name=f"NestedCV_{self.model_type}") as run:
 
-            outer_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)
+            outer_cv = StratifiedKFold(
+                n_splits=self.n_outer_splits, shuffle=True, random_state=42
+            )
             outer_cv_scores = []
             outer_cv_params = []
             outer_cv_features = []
@@ -130,56 +141,65 @@ class ModelTrainer:
                 X_train_outer, X_val_outer = X_train[train_idx], X_train[val_idx]
                 y_train_outer, y_val_outer = y_train[train_idx], y_train[val_idx]
 
-                study = optuna.create_study(direction="maximize")
-
-                study.optimize(
-                    lambda trial: self._objective(trial, X_train_outer, y_train_outer),
-                    n_trials=30,
-                    n_jobs=-1,
-                    show_progress_bar=True,
-                )
-
-                best_params = study.best_params
-
-                # Fit model on outer training fold
-                final_estimator = self.fetch_model()
-                final_estimator.set_params(**best_params)
-
-                final_rfe_cv = StratifiedKFold(
-                    n_splits=5, shuffle=True, random_state=42
-                )
-                rfecv = RFECV(
-                    estimator=final_estimator,
-                    step=1,
-                    cv=final_rfe_cv,
-                    scoring="neg_log_loss",
-                    n_jobs=-1,
-                )
-                pipeline = Pipeline(steps=[("feature_selection", rfecv)])
-                pipeline.fit(X_train_outer, y_train_outer)
-
-                selected_feature_mask = rfecv.get_support(indices=True)
-                selected_features = X_train.columns[selected_feature_mask]
-
-                # predict
-                final_model = rfecv.estimator_
-                y_pred_proba = final_model.predict_proba(X_val_outer[selected_features])
-
-                outer_fold_log_loss = log_loss(y_val_outer, y_pred_proba)
-                outer_cv_scores.append(outer_fold_log_loss)
-                outer_cv_params.append(best_params)
-                outer_cv_features.append(selected_feature_mask)
-
                 with mlflow.start_run(nested=True, run_name=f"Outer_fold_{i+1}"):
+                    study = optuna.create_study(direction="maximize")
+
+                    mlflow_callback = MLflowCallback(
+                        tracking_uri=mlflow.get_tracking_uri(),
+                        metric_name="neg_log_loss",
+                        mlflow_kwargs={"nested": True},
+                    )
+                    study.optimize(
+                        lambda trial: self._objective(
+                            trial, X_train_outer, y_train_outer
+                        ),
+                        n_trials=self.n_trials,
+                        n_jobs=-1,
+                        show_progress_bar=True,
+                        callbacks=[mlflow_callback],
+                    )
+
+                    best_params = study.best_params
+
+                    # Fit model on outer training fold
+                    final_estimator = self.fetch_model()
+                    final_estimator.set_params(**best_params)
+
+                    final_rfe_cv = StratifiedKFold(
+                        n_splits=5, shuffle=True, random_state=42
+                    )
+                    rfecv = RFECV(
+                        estimator=final_estimator,
+                        step=1,
+                        cv=final_rfe_cv,
+                        scoring="neg_log_loss",
+                        n_jobs=-1,
+                    )
+                    pipeline = Pipeline(steps=[("feature_selection", rfecv)])
+                    pipeline.fit(X_train_outer, y_train_outer)
+
+                    selected_feature_mask = rfecv.get_support(indices=True)
+                    selected_features = X_train.columns[selected_feature_mask]
+
+                    # predict
+                    final_model = rfecv.estimator_
+                    y_pred_proba = final_model.predict_proba(
+                        X_val_outer[selected_features]
+                    )
+
+                    outer_fold_log_loss = log_loss(y_val_outer, y_pred_proba)
+                    outer_cv_scores.append(outer_fold_log_loss)
+                    outer_cv_params.append(best_params)
+                    outer_cv_features.append(selected_feature_mask)
+
                     # Log the final model
                     mlflow.log_param(
                         "outer_selected_features", ",".join(map(str, selected_features))
                     )
                     mlflow.log_metric("outer_log_loss", outer_fold_log_loss)
-                    mlflow.log_params("params", best_params)
+                    mlflow.log_params(best_params)
                     mlflow.log_model(final_model, "model")
 
-        #
         best_idx = np.argmax(outer_cv_scores)
 
         return (outer_cv_params[best_idx], outer_cv_features[best_idx])
