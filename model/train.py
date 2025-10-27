@@ -108,7 +108,7 @@ class ModelTrainer:
         )  # max to get the score of the max neg_log_loss
 
         # log to mlflow
-        with mlflow.start_run(nested=True):
+        with mlflow.start_run(nested=True, run_name="Inner_fold"):
             mlflow.log_params(params)
             mlflow.log_metric("neg_log_loss", mean_score)
 

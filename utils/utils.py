@@ -10,6 +10,7 @@ from scipy.stats import multivariate_normal
 from sklearn.mixture import GaussianMixture
 import polars as pl
 import seaborn as sns
+from sklearn.feature_selection import mutual_info_classif
 
 from utils.statics import france_argentina_match_id
 
@@ -315,6 +316,12 @@ def plot_correlations(train_df: pl.DataFrame, numerical_cols: List[str]) -> None
 def plot_numerical_feature_distributions(
     train_df: pl.DataFrame, numerical_cols: List[str]
 ) -> None:
+    """Plot numerical feature distributions
+
+    Args:
+        train_df (pl.DataFrame): Train dataframe
+        numerical_cols (List[str]): List of numerical columns
+    """
     fig, ax = plt.subplots(3, 3, figsize=(12, 8), tight_layout=True)
     ax = ax.ravel()
 
@@ -325,4 +332,63 @@ def plot_numerical_feature_distributions(
         ax[i].set_title(f"Distribution of {column}")
         ax[i].set_xlabel(column)
         ax[i].set_ylabel("Frequency")
+    plt.show()
+
+
+def plot_categorical_feature_distributions(
+    train_df: pl.DataFrame, categorical_cols: List[str]
+) -> None:
+    """Plot categorical feature distributions
+
+    Args:
+        train_df (pl.DataFrame): Train dataframe
+        categorical_cols (List[str]): List of categorical columns
+    """
+    fig, ax = plt.subplots(2, 2, figsize=(10, 6), tight_layout=True)
+    ax = ax.ravel()
+
+    for i, column in enumerate(categorical_cols):
+        sns.countplot(x=train_df.select(column).to_series(), ax=ax[i])
+        ax[i].set_title(f"Count Plot of {column}")
+        ax[i].set_xlabel(column)
+        ax[i].set_ylabel("Count")
+        if column == "body_part":
+            ax[i].tick_params(axis="x", rotation=45)
+
+    sns.countplot(x=train_df.select("outcome").to_series(), ax=ax[-1])
+    ax[-1].set_xlabel("Outcome")
+    ax[-1].set_ylabel("Count")
+    ax[-1].set_title("Count Plot of Outcome")
+    plt.show()
+
+
+def plot_single_feature_distribution(
+    train_df, col: str, bins: int | str = 30, kde: bool = True
+) -> None:
+    if type(bins) == str:
+        bins = "auto"
+        print("Bins is string type: defaulting to 'auto'")
+
+    sns.histplot(train_df.select(pl.col(col)).to_series(), bins=bins, kde=kde)
+    plt.show()
+
+
+def plot_mutual_information(
+    X_train: pl.DataFrame,
+    y_train: pl.DataFrame,
+    discrete_features: List[bool] | str = "auto",
+):
+    mi = mutual_info_classif(
+        X_train, y_train, discrete_features=discrete_features, random_state=165
+    )
+
+    mi_df = pl.DataFrame({"Feature": X_train.columns, "Mutual Information": mi})
+    mi_df = mi_df.sort(by="Mutual Information", descending=True)
+
+    plt.figure(figsize=(8, 5))
+    sns.barplot(x="Mutual Information", y="Feature", data=mi_df, palette="Blues_d")
+    plt.title("Mutual Information of Features with Target")
+    plt.xlabel("Mutual Information")
+    plt.ylabel("Feature")
+    plt.tight_layout()
     plt.show()
