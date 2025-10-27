@@ -20,9 +20,7 @@ import numpy as np
 
 class ModelTrainer:
 
-    def __init__(self, X_train: pl.DataFrame, y_train: pl.DataFrame, model_type: str):
-        self.X_train = X_train
-        self.y_train = y_train
+    def __init__(self, model_type: str):
         self.model_type = model_type
 
     def set_params(
@@ -118,6 +116,10 @@ class ModelTrainer:
         self, X_train: pl.DataFrame, y_train: pl.DataFrame
     ) -> Tuple[dict, np.ndarray]:
 
+        print("Starting training with model {}")
+
+        mlflow.set_tracking_uri("http://127.0.0.1:8080/")
+        mlflow.set_experiment("Model selection and hyperparameter tuning")
         with mlflow.start_run() as run:
 
             outer_cv = StratifiedKFold(n_splits=5, shuffle=True, random_state=42)

@@ -1,0 +1,6 @@
+artifact_location: file:///c:/Users/Yucheng/Documents/DDSA/football_analytics/02-analysis/mlruns/848270811606015352
+creation_time: 1761602039619
+experiment_id: '848270811606015352'
+last_update_time: 1761602039619
+lifecycle_stage: active
+name: Model selection and hyperparameter tuning
