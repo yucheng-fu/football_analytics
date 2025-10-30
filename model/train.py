@@ -27,7 +27,7 @@ class ModelTrainer:
 
     def __init__(
         self,
-        model_type: str,S
+        model_type: str,
         n_inner_splits: int = 10,
         n_outer_splits: int = 5,
         n_trials: int = 20,
