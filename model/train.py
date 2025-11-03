@@ -75,27 +75,6 @@ class ModelTrainer:
 
         raise ValueError(f"Unsupported model type: {self.model_type}")
 
-    def add_scale_pos_weight_trial(
-        self, trial: optuna.trial.Trial, y_train_outer: pl.Series, params: dict
-    ) -> dict:
-        """Compute scale pos weight
-
-        Args:
-            trial (optuna.trial.Trial): Optuna trial
-            y_train_outer (pl.Series): Ground truths in outer fold
-            params (dict): Parameters dict
-
-        Returns:
-            dict: Parameters dict with scale added
-        """
-        pos = (y_train_outer == 1).sum()
-        neg = (y_train_outer == 0).sum()
-        scale = neg / pos if pos != 0 else 1.0
-        params["scale_pos_weight"] = scale
-
-        trial.set_user_attr("scale_pos_weight", scale)
-        return params
-
     def fetch_param_suggestions(self, trial: optuna.trial.Trial) -> dict:
         """
         Generate hyperparameter suggestions for the configured model using an Optuna trial.
@@ -157,12 +136,12 @@ class ModelTrainer:
                 "colsample_bytree": trial.suggest_float(
                     "colsample_bytree", 0.5, 1.0
                 ),  # fraction of features used per tree
-                # "min_child_samples": trial.suggest_int(
-                #     "min_child_samples", 20, 100
-                # ),  # smallest number of data points a leaf can have
-                # "bagging_freq": trial.suggest_int(
-                #     "bagging_freq", 0, 10
-                # ),  # bagging frequency
+                "min_child_samples": trial.suggest_int(
+                    "min_child_samples", 20, 100
+                ),  # smallest number of data points a leaf can have
+                "bagging_freq": trial.suggest_int(
+                    "bagging_freq", 0, 10
+                ),  # bagging frequency
                 "reg_alpha": trial.suggest_float(
                     "reg_alpha", 0.0, 1.0
                 ),  # L1 regularisation
@@ -266,9 +245,6 @@ class ModelTrainer:
                 tags=tags,
             )
             trial_run_id = trial_run.info.run_id
-
-            for k, v in trial.user_attrs.items():
-                client.log_param(trial_run_id, k, v)  # scale_pos_weight
             for key, value in trial.params.items():
                 client.log_param(
                     trial_run_id, key, value
@@ -345,9 +321,6 @@ class ModelTrainer:
             np.ndarray: Maximum mean cross-validation score obtained by the Optuna trial across the inner folds
         """
         params = self.fetch_param_suggestions(trial)
-        # params = self.add_scale_pos_weight_trial(
-        #     trial=trial, y_train_outer=y_train_outer, params=params
-        # )
         base_estimator = self.fetch_model()
         base_estimator.set_params(**params)
 
@@ -408,9 +381,6 @@ class ModelTrainer:
 
                     best_trial = study.best_trial
                     best_params = best_trial.params.copy()
-                    # best_params["scale_pos_weight"] = best_trial.user_attrs[
-                    #     "scale_pos_weight"
-                    # ]
 
                     # Fit model on outer training fold
                     final_estimator = self.fetch_model()
