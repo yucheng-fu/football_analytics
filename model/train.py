@@ -75,6 +75,27 @@ class ModelTrainer:
 
         raise ValueError(f"Unsupported model type: {self.model_type}")
 
+    def add_scale_pos_weight_trial(
+        self, trial: optuna.trial.Trial, y_train_outer: pl.Series, params: dict
+    ) -> dict:
+        """Compute scale pos weight
+
+        Args:
+            trial (optuna.trial.Trial): Optuna trial
+            y_train_outer (pl.Series): Ground truths in outer fold
+            params (dict): Parameters dict
+
+        Returns:
+            dict: Parameters dict with scale added
+        """
+        pos = (y_train_outer == 1).sum()
+        neg = (y_train_outer == 0).sum()
+        scale = neg / pos if pos != 0 else 1.0
+        params["scale_pos_weight"] = scale
+
+        trial.set_user_attr("scale_pos_weight", scale)
+        return params
+
     def fetch_param_suggestions(self, trial: optuna.trial.Trial) -> dict:
         """
         Generate hyperparameter suggestions for the configured model using an Optuna trial.
@@ -91,7 +112,7 @@ class ModelTrainer:
         if self.model_type == xgboost_model_name:
             return {
                 "n_estimators": trial.suggest_int(
-                    "n_estimators", 50, 1000
+                    "n_estimators", 100, 1000
                 ),  # number of trees
                 "max_depth": trial.suggest_int(
                     "max_depth", 3, 16
@@ -102,6 +123,12 @@ class ModelTrainer:
                 "subsample": trial.suggest_float(
                     "subsample", 0.5, 1.0
                 ),  # fraction of samples to be used for each tree
+                "colsample_bytree": trial.suggest_float(
+                    "colsample_bytree", 0.5, 1.0
+                ),  # fraction of features used per tree
+                "min_child_weight": trial.suggest_int(
+                    "min_child_weight", 1, 100
+                ),  # minimum sum of instance weights needed in a leaf to allow a split
                 "alpha": trial.suggest_float("alpha", 0.0, 1.0),  # L1 regularisation
                 "lambda": trial.suggest_float("lambda", 0.0, 1.0),  # L2 regularisation
                 "eval_metric": "logloss",  # evaluation metric
@@ -109,19 +136,33 @@ class ModelTrainer:
             }
 
         elif self.model_type == lightgbm_model_name:
+            max_depth = trial.suggest_int("max_depth", 3, 16)
+            max_num_leaves = min(
+                2**max_depth - 1, 512
+            )  # less than 2^(max_depth), cap at 512
+            num_leaves = trial.suggest_int("num_leaves", 7, max_num_leaves)
+
             return {
                 "n_estimators": trial.suggest_int(
-                    "n_estimators", 50, 1000
+                    "n_estimators", 100, 1000
                 ),  # number of trees
-                "max_depth": trial.suggest_int(
-                    "max_depth", 3, 16
-                ),  # maximum depth of each tree
+                "max_depth": max_depth,  # maximum depth of each tree
+                "num_leaves": num_leaves,  # number of leaves in one tree
                 "learning_rate": trial.suggest_float(
-                    "learning_rate", 0.01, 0.3
+                    "learning_rate", 0.01, 0.2
                 ),  # step size for optimisation
                 "subsample": trial.suggest_float(
                     "subsample", 0.5, 1.0
                 ),  # fraction of samples to be used for each tree
+                "colsample_bytree": trial.suggest_float(
+                    "colsample_bytree", 0.5, 1.0
+                ),  # fraction of features used per tree
+                # "min_child_samples": trial.suggest_int(
+                #     "min_child_samples", 20, 100
+                # ),  # smallest number of data points a leaf can have
+                # "bagging_freq": trial.suggest_int(
+                #     "bagging_freq", 0, 10
+                # ),  # bagging frequency
                 "reg_alpha": trial.suggest_float(
                     "reg_alpha", 0.0, 1.0
                 ),  # L1 regularisation
@@ -190,7 +231,7 @@ class ModelTrainer:
 
     def _mlflow_callback(
         self, outer_fold_run_id: str, experiment_name: str
-    ) -> Callable[[optuna.Study, optuna.trial.Trial]]:
+    ) -> Callable[[optuna.Study, optuna.trial.Trial], None]:
         """MLFlow callback function for logging parallel Optuna runs as nested runs in MLFlow
 
         Args:
@@ -226,6 +267,8 @@ class ModelTrainer:
             )
             trial_run_id = trial_run.info.run_id
 
+            for k, v in trial.user_attrs.items():
+                client.log_param(trial_run_id, k, v)  # scale_pos_weight
             for key, value in trial.params.items():
                 client.log_param(
                     trial_run_id, key, value
@@ -302,6 +345,9 @@ class ModelTrainer:
             np.ndarray: Maximum mean cross-validation score obtained by the Optuna trial across the inner folds
         """
         params = self.fetch_param_suggestions(trial)
+        # params = self.add_scale_pos_weight_trial(
+        #     trial=trial, y_train_outer=y_train_outer, params=params
+        # )
         base_estimator = self.fetch_model()
         base_estimator.set_params(**params)
 
@@ -331,10 +377,9 @@ class ModelTrainer:
         Returns:
             OuterCVResults: Outer cross-validation results
         """
-
+        outer_cv_results = OuterCVResults()
         self.setup_mlflow()
         with mlflow.start_run(run_name=f"{self.run_name}_{self.model_type}"):
-            outer_cv_results = OuterCVResults()
             for i, (train_idx, val_idx) in enumerate(
                 self.outer_cv.split(X_train, y_train)
             ):
@@ -361,7 +406,11 @@ class ModelTrainer:
                         callbacks=[callback_fn],
                     )
 
-                    best_params = study.best_params
+                    best_trial = study.best_trial
+                    best_params = best_trial.params.copy()
+                    # best_params["scale_pos_weight"] = best_trial.user_attrs[
+                    #     "scale_pos_weight"
+                    # ]
 
                     # Fit model on outer training fold
                     final_estimator = self.fetch_model()
@@ -376,7 +425,9 @@ class ModelTrainer:
                     )
                     rfecv.fit(X_train_outer, y_train_outer)
 
-                    selected_features = self.get_features()
+                    selected_features = self.get_features(
+                        X_train_outer=X_train_outer, rfecv=rfecv
+                    )
 
                     outer_fold_log_loss = self.eval_validation_loss(
                         X_val_outer=X_val_outer,
@@ -386,7 +437,7 @@ class ModelTrainer:
                     )
 
                     self.append_and_log_metrics_and_params(
-                        outer_cv_result=OuterCVResults,
+                        outer_cv_results=outer_cv_results,
                         selected_features=selected_features,
                         outer_fold_log_loss=outer_fold_log_loss,
                         best_params=best_params,
