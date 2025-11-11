@@ -98,7 +98,7 @@ class ModelCVEvaluator:
                     "n_estimators", 100, 1000
                 ),  # number of trees
                 "max_depth": trial.suggest_int(
-                    "max_depth", 3, 16
+                    "max_depth", 3, 100
                 ),  # maximum depth of each tree
                 "learning_rate": trial.suggest_float(
                     "learning_rate", 0.01, 0.3
@@ -119,7 +119,7 @@ class ModelCVEvaluator:
             }
 
         elif self.model_type == lightgbm_model_name:
-            max_depth = trial.suggest_int("max_depth", 3, 16)
+            max_depth = trial.suggest_int("max_depth", 3, 100)
             max_num_leaves = min(
                 2**max_depth - 1, 512
             )  # less than 2^(max_depth), cap at 512

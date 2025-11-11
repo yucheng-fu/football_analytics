@@ -32,11 +32,14 @@ class ModelTrainer:
         self.experiment_name = experiment_name
 
     def setup_mlflow(self):
+        params_str = ", ".join(f"{k}={v}" for k, v in self.best_params.items())
+        features_str = ", ".join(self.best_features)
+
         self.logger.info(
             f"""Starting training with model {self.model_type} with the following configuration:
-        - {self.n_inner_splits} inner splits
-        - {self.n_outer_splits} outer splits
-        - {self.n_trials} trials"""
+        - Params: {params_str}
+        - Features: {features_str}
+        """
         )
 
         mlflow.set_tracking_uri(tracking_uri)
@@ -71,7 +74,9 @@ class ModelTrainer:
         if self.model_type == xgboost_model_name:
             return XGBClassifier()
         elif self.model_type == lightgbm_model_name:
-            return LGBMClassifier(verbose=-1)
+            return LGBMClassifier(
+                verbose=-1, bagging_freq=0
+            )  # init model, will be overwritten later when setting params
 
         raise ValueError(f"Unsupported model type: {self.model_type}")
 
@@ -123,12 +128,12 @@ class ModelTrainer:
             y_pred_proba = model.predict_proba(X_train_final)
             train_log_loss = log_loss(y_train, y_pred_proba)
 
-            self.log_model(model=model, X_data=X_train_final, output=y_pred_proba)
+            self.log_model(final_model=model, X_data=X_train_final, output=y_pred_proba)
             mlflow.log_params(self.best_params)
             mlflow.set_tag("features", ",".join(map(str, self.best_features)))
             mlflow.log_metric("train_loss", train_log_loss)
             mlflow.register_model(
-                model_uri=f"runs:/{run.info.run_id}/model",
+                model_uri=f"runs:/{run.info.run_id}/{self.model_type}",
                 name=f"{self.experiment_name}_{self.model_type}",
             )
 

@@ -11,8 +11,12 @@ from sklearn.mixture import GaussianMixture
 import polars as pl
 import seaborn as sns
 from sklearn.feature_selection import mutual_info_classif
+import mlflow
+from mlflow.tracking import MlflowClient
+from model.dataclasses import LGBMParams
 
-from utils.statics import france_argentina_match_id
+
+from utils.statics import france_argentina_match_id, tracking_uri
 
 
 def build_cmap(x: Tuple[int, int, int], y: Tuple[int, int, int]) -> ListedColormap:
@@ -392,3 +396,37 @@ def plot_mutual_information(
     plt.ylabel("Feature")
     plt.tight_layout()
     plt.show()
+
+
+def compute_generalisation_error_from_run_id_and_experiment_id(
+    parent_run_id: str, experiment_id: str
+) -> None:
+    mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient()
+
+    child_runs = client.search_runs(
+        experiment_ids=[experiment_id],
+        filter_string=f"tags.mlflow.parentRunId = '{parent_run_id}'",
+    )
+
+    loss = [run.data.metrics["log_loss"] for run in child_runs]
+    mean = np.mean(loss)
+    std = np.std(loss, ddof=1)
+
+    print(
+        f"95% confidence interval for best estimate of generalisation: {mean} ± {1.96*std / np.sqrt(len(loss))}"
+    )
+
+
+def get_best_params_and_features_from_parent_run_id(
+    parent_run_id: str,
+) -> Tuple[dict, np.ndarray]:
+    mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient()
+    parent_run = client.get_run(parent_run_id)
+
+    lgbm_params = LGBMParams(**parent_run.data.params)
+    best_params = lgbm_params.model_dump()
+    best_features = np.array(parent_run.data.tags["selected_features"].split(","))
+
+    return (best_params, best_features)
