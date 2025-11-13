@@ -16,7 +16,7 @@ from mlflow.utils.mlflow_tags import MLFLOW_PARENT_RUN_ID
 import numpy as np
 import logging
 from model.dataclasses import OuterCVResults
-from optuna.integration import LightGBMPruningCallback
+from optuna.integration import LightGBMPruningCallback, XGBoostPruningCallback
 from lightgbm.callback import early_stopping
 
 
@@ -48,7 +48,13 @@ class ModelCVEvaluator:
             n_splits=self.n_outer_splits, shuffle=True, random_state=165
         )
 
-    def setup_mlflow(self):
+    def setup_mlflow(self) -> None:
+        """
+        Sets up tracking uri and experiment for MLFlow
+
+        Returns:
+            None
+        """
         self.logger.info(
             f"""Starting training with model {self.model_type} with the following configuration:
         - {self.n_inner_splits} inner splits
@@ -203,8 +209,8 @@ class ModelCVEvaluator:
         best_params: dict,
         run: Run,
     ):
-        if outer_fold_log_loss is not None:
-            outer_cv_results.scores.append(outer_fold_log_loss)
+
+        outer_cv_results.scores.append(outer_fold_log_loss)
         outer_cv_results.params.append(best_params)
         outer_cv_results.features.append(selected_features)
         outer_cv_results.run_ids.append(run.info.run_id)

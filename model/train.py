@@ -31,7 +31,10 @@ class ModelTrainer:
         self.run_name = run_name
         self.experiment_name = experiment_name
 
-    def setup_mlflow(self):
+    def setup_mlflow(self) -> None:
+        """
+        Sets up tracking uri and experiment for MLFlow
+        """
         params_str = ", ".join(f"{k}={v}" for k, v in self.best_params.items())
         features_str = ", ".join(self.best_features)
 
@@ -45,7 +48,20 @@ class ModelTrainer:
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment_name=self.experiment_name)
 
-    def set_params(self, model: XGBClassifier | LGBMClassifier):
+    def set_params(
+        self, model: XGBClassifier | LGBMClassifier
+    ) -> XGBClassifier | LGBMClassifier:
+        """Set params for selected model type
+
+        Args:
+            model (XGBClassifier | LGBMClassifier): Model
+
+        Raises:
+            ValueError: Thorws value error for invalid parameters
+
+        Returns:
+            XGBClassifier | LGBMClassifier: Model
+        """
         accepted_params = set(model.get_params().keys())
         valid_params = {
             k: v for k, v in self.best_params.items() if k in accepted_params
@@ -117,6 +133,15 @@ class ModelTrainer:
         )
 
     def train(self, X_train: pl.DataFrame, y_train) -> XGBClassifier | LGBMClassifier:
+        """Train final model using the best hyperparameters and features
+
+        Args:
+            X_train (pl.DataFrame): Training set features
+            y_train (_type_): Training set ground truths
+
+        Returns:
+            XGBClassifier | LGBMClassifier: Trained model
+        """
         self.setup_mlflow()
         with mlflow.start_run(run_name=f"{self.run_name}_{self.model_type}") as run:
             model = self.fetch_model()
