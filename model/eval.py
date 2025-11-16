@@ -5,7 +5,14 @@ from utils.statics import tracking_uri
 import numpy as np
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
-from sklearn.metrics import roc_auc_score, roc_curve
+from sklearn.metrics import (
+    roc_auc_score,
+    roc_curve,
+    accuracy_score,
+    precision_score,
+    recall_score,
+    f1_score,
+)
 from typing import Tuple
 import matplotlib.pyplot as plt
 
