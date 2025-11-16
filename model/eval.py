@@ -51,6 +51,18 @@ class ModelEval:
 
         return roc_auc, fpr, tpr, threshold
 
+    def compute_accuracy(self, y: pl.DataFrame, y_probs: pl.DataFrame) -> float:
+        pass
+
+    def compute_precision(self):
+        pass
+
+    def compute_recall(self):
+        pass
+
+    def compute_f1_score(self):
+        pass
+
     def eval(self, X_test: pl.DataFrame, y_test: pl.DataFrame) -> None:
         """Evaluate model on the test set
 
