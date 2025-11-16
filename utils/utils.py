@@ -1,4 +1,5 @@
 from typing import Tuple, List
+from xmlrpc import client
 
 import matplotlib.pyplot as plt
 import mplsoccer as mpl
@@ -14,9 +15,16 @@ from sklearn.feature_selection import mutual_info_classif
 import mlflow
 from mlflow.tracking import MlflowClient
 from model.dataclasses import LGBMParams
+from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
 
 
-from utils.statics import france_argentina_match_id, tracking_uri
+from utils.statics import (
+    france_argentina_match_id,
+    tracking_uri,
+    lightgbm_model_name,
+    xgboost_model_name,
+)
 
 
 def build_cmap(x: Tuple[int, int, int], y: Tuple[int, int, int]) -> ListedColormap:
@@ -430,3 +438,19 @@ def get_best_params_and_features_from_parent_run_id(
     best_features = np.array(parent_run.data.tags["selected_features"].split(","))
 
     return (best_params, best_features)
+
+
+def get_registered_model(
+    model_type: str, model_registry_name: str, version: str = "latest"
+) -> XGBClassifier | LGBMClassifier:
+    log_fn_mapping = {
+        xgboost_model_name: mlflow.xgboost.load_model,
+        lightgbm_model_name: mlflow.lightgbm.load_model,
+    }
+
+    log_fn = log_fn_mapping.get(model_type)
+    if log_fn is None:
+        raise ValueError(f"Unsupported model type: {model_type}")
+
+    trained_model = log_fn(model_uri=f"models:/{model_registry_name}/{version}")
+    return trained_model
