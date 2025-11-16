@@ -7,6 +7,7 @@ from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from sklearn.metrics import roc_auc_score, roc_curve
 from typing import Tuple
+import matplotlib.pyplot as plt
 
 
 class ModelEval:
@@ -40,7 +41,7 @@ class ModelEval:
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment_name=self.experiment_name)
 
-    def plot_auc_roc(self, roc_auc, fpr, tpr, threshold) -> None:
+    def plot_auc_roc(self, ax: plt.Axes, axroc_auc, fpr, tpr, threshold) -> None:
         pass
 
     def compute_roc_curve(self, y: pl.DataFrame, y_probs: pl.DataFrame) -> Tuple:
