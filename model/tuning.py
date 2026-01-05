@@ -3,10 +3,12 @@ from typing import Callable
 import polars as pl
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
+import lightgbm as lgb
 from sklearn.model_selection import StratifiedKFold, train_test_split
 from sklearn.feature_selection import RFECV
 from sklearn.metrics import log_loss
 import optuna
+import matplotlib.pyplot as plt
 from utils.statics import xgboost_model_name, lightgbm_model_name, tracking_uri
 import mlflow
 from mlflow.entities import Run
@@ -34,7 +36,7 @@ class ModelCVEvaluator:
         n_trials: int = 20,
         run_name: str = "baseline_hyperparameter_tuning",
         experiment_name: str = "Model selection and hyperparameter tuning",
-        init_params: dict | None = None,
+        use_initial_tuning: bool = True,
     ):
         self.model_type = model_type
         self.n_inner_splits = n_inner_splits
@@ -42,7 +44,7 @@ class ModelCVEvaluator:
         self.n_trials = n_trials
         self.run_name = run_name
         self.experiment_name = experiment_name
-        self.init_params = init_params
+        self.use_initial_tuning = use_initial_tuning
         self.inner_cv = StratifiedKFold(
             n_splits=self.n_inner_splits, shuffle=True, random_state=165
         )
@@ -356,7 +358,11 @@ class ModelCVEvaluator:
                 eval_set=[(X_val_inner, y_val_inner)],
                 eval_metric="binary_logloss",
                 callbacks=[
-                    LightGBMPruningCallback(trial, "binary_logloss"),
+                    (
+                        LightGBMPruningCallback(trial, "binary_logloss")
+                        if self.model_type == lightgbm_model_name
+                        else XGBoostPruningCallback(trial, "logloss")
+                    ),
                     early_stopping(stopping_rounds=50, verbose=False),
                 ],
             )
@@ -372,8 +378,8 @@ class ModelCVEvaluator:
 
     def init_hyperparameter_tuning(
         self, X_train_outer: pl.DataFrame, y_train_outer: pl.DataFrame
-    ) -> None:
-        if self.init_params is None:
+    ) -> dict:
+        if self.use_initial_tuning:
             self.logger.info("Starting initial hyperparameter tuning...")
             init_study = optuna.create_study(direction="minimize")
 
@@ -385,7 +391,18 @@ class ModelCVEvaluator:
             )
 
             best_init_trial = init_study.best_trial
-            self.init_params = best_init_trial.params.copy()
+            init_params = best_init_trial.params.copy()
+
+            with mlflow.start_run(
+                nested=True, run_name=f"Initial_hyperparameter_tuning_{self.model_type}"
+            ):
+                mlflow.log_params(init_params)
+                mlflow.log_metric("log_loss", init_study.best_value)
+
+            return init_params
+
+        else:
+            return {}
 
     def hyperparameter_tuning(
         self,
@@ -413,11 +430,14 @@ class ModelCVEvaluator:
         return best_params
 
     def feature_selection(
-        self, X_train_outer: pl.DataFrame, y_train_outer: pl.DataFrame
+        self,
+        X_train_outer: pl.DataFrame,
+        y_train_outer: pl.DataFrame,
+        init_params: dict,
     ) -> np.ndarray:
         self.logger.info("Starting feature selection using RFECV...")
         rfe_estimator = self.fetch_model()
-        rfe_estimator.set_params(**self.init_params)
+        rfe_estimator.set_params(**init_params)
         rfecv = RFECV(
             estimator=rfe_estimator,
             step=1,
@@ -474,7 +494,7 @@ class ModelCVEvaluator:
                     )
 
                     # 1. Perform an initial tuning using 20 trials.
-                    self.init_hyperparameter_tuning(
+                    init_params = self.init_hyperparameter_tuning(
                         X_train_outer=X_train_outer, y_train_outer=y_train_outer
                     )
 
@@ -482,6 +502,7 @@ class ModelCVEvaluator:
                     selected_features = self.feature_selection(
                         X_train_outer=X_train_outer,
                         y_train_outer=y_train_outer,
+                        init_params=init_params,
                     )
 
                     # 3. Perform full hyperparamter tuning
@@ -539,6 +560,75 @@ class ModelParamTuner(ModelCVEvaluator):
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment_name=self.experiment_name)
 
+    def plot_loss_curve(self, train_loss: list, valid_loss: list) -> None:
+        fig = plt.figure(figsize=(10, 6))
+        epochs = range(1, len(train_loss) + 1)
+        plt.plot(epochs, train_loss, "r", label="Training loss")
+        plt.plot(epochs, valid_loss, "b", label="Validation loss")
+        plt.title(f"Training and Validation Loss - {self.model_type}")
+        plt.xlabel("Boosting Rounds")
+        plt.ylabel("Log Loss")
+        plt.legend()
+        plt.grid(True, linestyle="--", alpha=0.5)
+
+        mlflow.log_figure(fig, artifact_file=f"{self.model_type}_loss_curve.png")
+
+    def fit_and_evaluate_model(
+        self,
+        X_train: pl.DataFrame,
+        y_train: pl.DataFrame,
+        X_val: pl.DataFrame,
+        y_val: pl.DataFrame,
+        best_params: dict,
+        selected_features: np.ndarray,
+    ) -> XGBClassifier | LGBMClassifier:
+        self.logger.info("Fitting final model with best hyperparameters...")
+        final_model = self.fetch_model()
+        final_model.set_params(**best_params)
+        final_model.fit(
+            X=X_train[selected_features],
+            y=y_train,
+            eval_metric="binary_logloss",
+            eval_set=[(X_val[selected_features], y_val)],
+        )
+
+        results = {}
+
+        if self.model_type == lightgbm_model_name:
+            final_model.fit(
+                X_train[selected_features],
+                y_train,
+                eval_set=[
+                    (X_train[selected_features], y_train),
+                    (X_val[selected_features], y_val),
+                ],
+                eval_names=["train", "valid"],
+                eval_metric="binary_logloss",
+                callbacks=[lgb.record_evaluation(results)],
+            )
+            train_loss = results["train"]["binary_logloss"]
+            valid_loss = results["valid"]["binary_logloss"]
+
+        elif self.model_type == xgboost_model_name:
+            final_model.fit(
+                X_train[selected_features],
+                y_train,
+                eval_set=[
+                    (X_train[selected_features], y_train),
+                    (X_val[selected_features], y_val),
+                ],
+                verbose=False,
+            )
+            results = final_model.evals_result()
+
+            train_loss = results["validation_0"]["logloss"]
+            valid_loss = results["validation_1"]["logloss"]
+
+        if train_loss and valid_loss:
+            self.plot_loss_curve(train_loss, valid_loss)
+
+        return final_model
+
     def tune_and_train(self, X: pl.DataFrame, y: pl.DataFrame) -> OuterCVResults:
         """Tune and train on the entire X_train set. Use one-layer CV for hyperparameter optimisation.
 
@@ -564,7 +654,7 @@ class ModelParamTuner(ModelCVEvaluator):
             )
 
             # 1. Perform an initial tuning using 20 trials
-            self.init_hyperparameter_tuning(
+            init_params = self.init_hyperparameter_tuning(
                 X_train_outer=X_train, y_train_outer=y_train
             )
 
@@ -572,6 +662,7 @@ class ModelParamTuner(ModelCVEvaluator):
             selected_features = self.feature_selection(
                 X_train_outer=X_train,
                 y_train_outer=y_train,
+                init_params=init_params,
             )
 
             # 3. Perform full hyperparamter tuning
@@ -583,9 +674,11 @@ class ModelParamTuner(ModelCVEvaluator):
             )
 
             # 4. Fit final model with best hyperparameters on the train set
-            final_model = self.fit_model(
+            final_model = self.fit_and_evaluate_model(
                 X_train_outer=X_train,
                 y_train_outer=y_train,
+                X_val=X_val,
+                y_val=y_val,
                 best_params=best_params,
                 selected_features=selected_features,
             )
