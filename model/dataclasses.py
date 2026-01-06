@@ -9,6 +9,7 @@ class OuterCVResults:
     params: List[dict] = field(default_factory=list)
     features: List[Any] = field(default_factory=list)
     run_ids: List[str] = field(default_factory=list)
+    experiment_ids: List[str] = field(default_factory=list)
 
 
 class LGBMParams(BaseModel):

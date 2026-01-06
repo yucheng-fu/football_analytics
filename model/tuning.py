@@ -218,6 +218,7 @@ class ModelCVEvaluator:
         outer_cv_results.params.append(best_params)
         outer_cv_results.features.append(selected_features)
         outer_cv_results.run_ids.append(run.info.run_id)
+        outer_cv_results.experiment_ids.append(run.info.experiment_id)
 
         mlflow.set_tag("selected_features", ",".join(map(str, selected_features)))
         mlflow.log_metric("log_loss", outer_fold_log_loss)
@@ -675,8 +676,8 @@ class ModelParamTuner(ModelCVEvaluator):
 
             # 4. Fit final model with best hyperparameters on the train set
             final_model = self.fit_and_evaluate_model(
-                X_train_outer=X_train,
-                y_train_outer=y_train,
+                X_train=X_train,
+                y_train=y_train,
                 X_val=X_val,
                 y_val=y_val,
                 best_params=best_params,
