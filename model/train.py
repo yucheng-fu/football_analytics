@@ -148,7 +148,7 @@ class ModelTrainer:
             model = self.set_params(model=model)
 
             X_train_final = X_train[self.best_features]
-            model.fit(X_train_final, y_train)
+            model.fit(X_train_final, y_train, feature_name=X_train_final.columns)
 
             y_pred_proba = model.predict_proba(X_train_final)
             train_log_loss = log_loss(y_train, y_pred_proba)

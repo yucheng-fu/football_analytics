@@ -1,6 +1,7 @@
-from typing import Callable
+from typing import Callable, Tuple
 
 import polars as pl
+import pickle
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 import lightgbm as lgb
@@ -17,7 +18,7 @@ from mlflow.tracking import MlflowClient
 from mlflow.utils.mlflow_tags import MLFLOW_PARENT_RUN_ID
 import numpy as np
 import logging
-from model.dataclasses import OuterCVResults
+from model.data_classes import OuterCVResults
 from optuna.integration import LightGBMPruningCallback, XGBoostPruningCallback
 from lightgbm.callback import early_stopping
 
@@ -212,7 +213,21 @@ class ModelCVEvaluator:
         outer_fold_log_loss: float,
         best_params: dict,
         run: Run,
-    ):
+        study: optuna.study.Study | None,
+    ) -> None:
+        """Append and log metrics and params to the MLFlow run
+
+        Args:
+            outer_cv_results (OuterCVResults): OuterCVResults object to append results to
+            selected_features (np.ndarray): array of selected features
+            outer_fold_log_loss (float): log_loss evaluated on the outer fold validation set
+            best_params (dict): best hyperparameters found in the outer fold
+            run (Run): MLFlow run object
+            study (optuna.study.Study | None): Optuna study object (optional)
+
+        Returns:
+            None
+        """
 
         outer_cv_results.scores.append(outer_fold_log_loss)
         outer_cv_results.params.append(best_params)
@@ -223,6 +238,10 @@ class ModelCVEvaluator:
         mlflow.set_tag("selected_features", ",".join(map(str, selected_features)))
         mlflow.log_metric("log_loss", outer_fold_log_loss)
         mlflow.log_params(best_params)
+        if study is not None:
+            with open("optuna_study.pkl", "wb") as f:
+                pickle.dump(study, f)
+            mlflow.log_artifact("optuna_study.pkl")
 
     def _mlflow_callback(
         self, outer_fold_run_id: str, experiment_name: str
@@ -380,6 +399,15 @@ class ModelCVEvaluator:
     def init_hyperparameter_tuning(
         self, X_train_outer: pl.DataFrame, y_train_outer: pl.DataFrame
     ) -> dict:
+        """Start initial hyperparameter tuning. Run for 20 trials
+
+        Args:
+            X_train_outer (pl.DataFrame): Outer fold of X_train
+            y_train_outer (pl.DataFrame): Outer fold of y_train
+
+        Returns:
+            dict: Dicitonary of best hyperparameters found in the initial tuning
+        """
         if self.use_initial_tuning:
             self.logger.info("Starting initial hyperparameter tuning...")
             init_study = optuna.create_study(direction="minimize")
@@ -411,7 +439,18 @@ class ModelCVEvaluator:
         y_train_outer: pl.DataFrame,
         selected_features: np.ndarray,
         callback_fn: Callable[[optuna.Study, optuna.trial.Trial], None],
-    ) -> dict:
+    ) -> Tuple[optuna.study.Study, dict]:
+        """Function for performing hyperparameter tuning with optuna.
+
+        Args:
+            X_train_outer (pl.DataFrame): Outer fold of X_train
+            y_train_outer (pl.DataFrame): Outer fold of y_train
+            selected_features (np.ndarray): Array of selected features from RFECV
+            callback_fn (Callable[[optuna.Study, optuna.trial.Trial], None]): Callback function for optuna study
+
+        Returns:
+            Tuple[optuna.study.Study, dict]: Optuna study object and dictionary of best hyperparameters
+        """
         self.logger.info("Starting full hyperparameter tuning...")
         study = optuna.create_study(direction="minimize")
 
@@ -428,7 +467,7 @@ class ModelCVEvaluator:
         best_trial = study.best_trial
         best_params = best_trial.params.copy()
 
-        return best_params
+        return study, best_params
 
     def feature_selection(
         self,
@@ -436,6 +475,16 @@ class ModelCVEvaluator:
         y_train_outer: pl.DataFrame,
         init_params: dict,
     ) -> np.ndarray:
+        """Feature selection using RFECV
+
+        Args:
+            X_train_outer (pl.DataFrame): Outer fold of X_train
+            y_train_outer (pl.DataFrame): Outer fold of y_train
+            init_params (dict): Hyperparameters found in the initial tuning
+
+        Returns:
+            np.ndarray: Array of selected features
+        """
         self.logger.info("Starting feature selection using RFECV...")
         rfe_estimator = self.fetch_model()
         rfe_estimator.set_params(**init_params)
@@ -459,6 +508,17 @@ class ModelCVEvaluator:
         best_params: dict,
         selected_features: np.ndarray,
     ) -> XGBClassifier | LGBMClassifier:
+        """Fit model using the best hyperparameters and selected features
+
+        Args:
+            X_train_outer (pl.DataFrame): Outer fold of X_train
+            y_train_outer (pl.DataFrame): Outer fold of y_train
+            best_params (dict): Best hyperparameters found in the outer fold
+            selected_features (np.ndarray): Array of selected features from RFECV
+
+        Returns:
+            XGBClassifier | LGBMClassifier: Trained final model
+        """
         self.logger.info("Fitting final model with best hyperparameters...")
         final_model = self.fetch_model()
         final_model.set_params(**best_params)
@@ -507,7 +567,7 @@ class ModelCVEvaluator:
                     )
 
                     # 3. Perform full hyperparamter tuning
-                    best_params = self.hyperparameter_tuning(
+                    _, best_params = self.hyperparameter_tuning(
                         X_train_outer=X_train_outer,
                         y_train_outer=y_train_outer,
                         selected_features=selected_features,
@@ -536,6 +596,7 @@ class ModelCVEvaluator:
                         outer_fold_log_loss=outer_fold_log_loss,
                         best_params=best_params,
                         run=run,
+                        study=None,
                     )
 
             mean_score = np.mean(outer_cv_results.scores)
@@ -543,12 +604,20 @@ class ModelCVEvaluator:
             mlflow.log_metric("mean_log_loss", mean_score)
             mlflow.log_metric("std_log_loss", std_score)
 
+        mlflow.end_run()
+
         return outer_cv_results
 
 
 class ModelParamTuner(ModelCVEvaluator):
 
     def setup_mlflow(self):
+        """
+        Sets up tracking uri and experiment for MLFlow
+
+        Returns:
+            None
+        """
         self.logger.info(
             f"""Starting training with model {self.model_type} with the following configuration:
         - {self.n_inner_splits} inner splits
@@ -562,6 +631,12 @@ class ModelParamTuner(ModelCVEvaluator):
         mlflow.set_experiment(experiment_name=self.experiment_name)
 
     def plot_loss_curve(self, train_loss: list, valid_loss: list) -> None:
+        """Plot loss curve for training
+
+        Args:
+            train_loss (list): Training loss values
+            valid_loss (list): Validation loss values
+        """
         fig = plt.figure(figsize=(10, 6))
         epochs = range(1, len(train_loss) + 1)
         plt.plot(epochs, train_loss, "r", label="Training loss")
@@ -583,6 +658,18 @@ class ModelParamTuner(ModelCVEvaluator):
         best_params: dict,
         selected_features: np.ndarray,
     ) -> XGBClassifier | LGBMClassifier:
+        """Fit final model using best hyerparameters and selected features
+
+        Args:
+            X_train (pl.DataFrame): Training set
+            y_train (pl.DataFrame): Training labels
+            X_val (pl.DataFrame): Validation set
+            y_val (pl.DataFrame): Validation labels
+            best_params (dict): Best hyperparameters found in the outer fold
+            selected_features (np.ndarray): Array of selected features from RFECV
+        Returns:
+            XGBClassifier | LGBMClassifier: Trained final model
+        """
         self.logger.info("Fitting final model with best hyperparameters...")
         final_model = self.fetch_model()
         final_model.set_params(**best_params)
@@ -667,7 +754,7 @@ class ModelParamTuner(ModelCVEvaluator):
             )
 
             # 3. Perform full hyperparamter tuning
-            best_params = self.hyperparameter_tuning(
+            study, best_params = self.hyperparameter_tuning(
                 X_train_outer=X_train,
                 y_train_outer=y_train,
                 selected_features=selected_features,
@@ -698,7 +785,10 @@ class ModelParamTuner(ModelCVEvaluator):
                 outer_fold_log_loss=outer_fold_log_loss,
                 best_params=best_params,
                 run=run,
+                study=study,
             )
+
+        mlflow.end_run()
 
         return outer_cv_results
 

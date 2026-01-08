@@ -33,6 +33,8 @@ class ModelEval:
         experiment_name: str,
     ):
         self.model = model
+        self.X_train = X_train
+        self.y_train = y_train
         self.best_features = best_features
         self.experiment_name = experiment_name
 
@@ -147,9 +149,9 @@ class ModelEval:
             plt.close(fig)
 
             self.logger.info(
-                f"Test ROC AUC={roc_auc:.4f}"
+                f"Test ROC AUC={roc_auc:.4f} | "
                 f"Train ROC AUC={train_roc_auc:.4f} | "
-                f"| Acc={acc:.4f} | "
+                f"Acc={acc:.4f} | "
                 f"Precision={precision:.4f} | Recall={recall:.4f} | F1={f1:.4f}"
                 f"| Log Loss={logloss:.4f}"
             )

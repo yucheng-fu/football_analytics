@@ -14,7 +14,7 @@ import seaborn as sns
 from sklearn.feature_selection import mutual_info_classif
 import mlflow
 from mlflow.tracking import MlflowClient
-from model.dataclasses import LGBMParams
+from model.data_classes import LGBMParams, OuterCVResults
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 
@@ -375,8 +375,16 @@ def plot_categorical_feature_distributions(
 
 
 def plot_single_feature_distribution(
-    train_df, col: str, bins: int | str = 30, kde: bool = True
+    train_df: pl.DataFrame, col: str, bins: int | str = 30, kde: bool = True
 ) -> None:
+    """Plot single feature distribution plot
+
+    Args:
+        train_df (pl.DataFrame): Training DataFrame
+        col (str): Column name to plot
+        bins (int | str, optional): Number of bins or binning strategy. Defaults to 30.
+        kde (bool, optional): Whether to show KDE curve. Defaults to True.
+    """
     if type(bins) == str:
         bins = "auto"
         print("Bins is string type: defaulting to 'auto'")
@@ -390,6 +398,13 @@ def plot_mutual_information(
     y_train: pl.DataFrame,
     discrete_features: List[bool] | str = "auto",
 ):
+    """Plot mutual information
+
+    Args:
+        X_train (pl.DataFrame): Training features
+        y_train (pl.DataFrame): Training labels
+        discrete_features (List[bool] | str, optional): How to handle discrete features. Defaults to "auto".
+    """
     mi = mutual_info_classif(
         X_train, y_train, discrete_features=discrete_features, random_state=165
     )
@@ -406,9 +421,45 @@ def plot_mutual_information(
     plt.show()
 
 
+def get_parent_run_id_from_experiment(
+    result: OuterCVResults | None, experiment_id: str
+) -> str:
+    """Get parent run ID from experiment
+
+    Args:
+        result (OuterCVResults | None): OuterCVResults object or None
+        experiment_id (str): Experiment ID
+
+    Returns:
+        str: Parent run ID
+    """
+    mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient()
+
+    if result is not None:
+        parent_run_id = client.get_run(result.run_ids[0])
+    else:
+        runs = client.search_runs(
+            experiment_ids=[experiment_id],
+            order_by=["attributes.start_time DESC"],
+        )
+
+        parent_run_id = next(
+            run.info.run_id for run in runs if "mlflow.parentRunId" not in run.data.tags
+        )
+
+    return parent_run_id
+
+
 def compute_generalisation_error_from_run_id_and_experiment_id(
     parent_run_id: str, experiment_id: str
 ) -> None:
+    """Compute generalisation error from runs
+
+    Args:
+        parent_run_id (str): Parent run ID
+        experiment_id (str): Experiment ID
+    """
     mlflow.set_tracking_uri(tracking_uri)
     client = MlflowClient()
 
@@ -429,6 +480,14 @@ def compute_generalisation_error_from_run_id_and_experiment_id(
 def get_best_params_and_features_from_parent_run_id(
     parent_run_id: str,
 ) -> Tuple[dict, np.ndarray]:
+    """Get params and features from parent run
+
+    Args:
+        parent_run_id (str): Parent run ID
+
+    Returns:
+        Tuple[dict, np.ndarray]: Best parameters and selected features
+    """
     mlflow.set_tracking_uri(tracking_uri)
     client = MlflowClient()
     parent_run = client.get_run(parent_run_id)
@@ -443,6 +502,19 @@ def get_best_params_and_features_from_parent_run_id(
 def get_registered_model(
     model_type: str, model_registry_name: str, version: str = "latest"
 ) -> XGBClassifier | LGBMClassifier:
+    """Get registered model from MLFlow
+
+    Args:
+        model_type (str): Type of the model
+        model_registry_name (str): Name of the model registry
+        version (str, optional): Version of the model. Defaults to "latest".
+
+    Raises:
+        ValueError: If the model type is unsupported
+
+    Returns:
+        XGBClassifier | LGBMClassifier: Trained model
+    """
     log_fn_mapping = {
         xgboost_model_name: mlflow.xgboost.load_model,
         lightgbm_model_name: mlflow.lightgbm.load_model,

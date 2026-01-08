@@ -14,6 +14,10 @@ class FeatureEngineeringHandler:
         """
 
         for col in columns:
+            # replace spaces in category values with underscores before dummification
+            self.X = self.X.with_columns(
+                pl.col(col).cast(pl.Utf8).str.replace_all(" ", "_").alias(col)
+            )
             dummies = self.X.select(pl.col(col)).to_dummies()
             self.X = self.X.hstack(dummies).drop(pl.col(col))
 
