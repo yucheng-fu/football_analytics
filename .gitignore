@@ -1,0 +1,23 @@
+# Byte-compiled / cache files
+__pycache__/
+*.py[cod]
+
+# Logs
+*.log
+
+# Virtual environments
+venv/
+env/
+.venv/
+
+# IDE / editor files
+.vscode/
+.idea/
+.ruff_cache
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# MLflow / experiment outputs
+02-analysis/mlruns/

@@ -1,12 +1,30 @@
-import numpy as np
-import mplsoccer as mpl
-from matplotlib.patches import Ellipse, Patch
-from matplotlib.colors import ListedColormap
-from matplotlib.axes import Axes
-from typing import Tuple
+from typing import Tuple, List
+from xmlrpc import client
+
 import matplotlib.pyplot as plt
-from sklearn.mixture import GaussianMixture
+import mplsoccer as mpl
+import numpy as np
+from matplotlib.axes import Axes
+from matplotlib.colors import ListedColormap
+from matplotlib.patches import Ellipse, Patch
 from scipy.stats import multivariate_normal
+from sklearn.mixture import GaussianMixture
+import polars as pl
+import seaborn as sns
+from sklearn.feature_selection import mutual_info_classif
+import mlflow
+from mlflow.tracking import MlflowClient
+from model.data_classes import LGBMParams, OuterCVResults
+from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
+
+
+from utils.statics import (
+    france_argentina_match_id,
+    tracking_uri,
+    lightgbm_model_name,
+    xgboost_model_name,
+)
 
 
 def build_cmap(x: Tuple[int, int, int], y: Tuple[int, int, int]) -> ListedColormap:
@@ -270,3 +288,241 @@ def evaluate_and_plot_gmm_pdf(
     plt.title("GMM Probability Density Function (PDF) for possession-related events")
     plt.savefig(fig_name, dpi=300, bbox_inches="tight")
     plt.show()
+
+
+def split_train_test(passes_df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """Split passes_df into train and test based on the match_id for the France-Argentina match
+
+    Args:
+        passes_df (pl.DataFrame): DataFrame containing pass events
+
+    Returns:
+        tuple[pl.DataFrame, pl.DataFrame]: Train and test DataFrames
+    """
+    train_df = passes_df.filter(pl.col("match_id") != france_argentina_match_id).drop(
+        pl.col("match_id")
+    )
+
+    test_df = passes_df.filter(pl.col("match_id") == france_argentina_match_id).drop(
+        pl.col("match_id")
+    )
+
+    return train_df, test_df
+
+
+def plot_correlations(train_df: pl.DataFrame, numerical_cols: List[str]) -> None:
+    """Plot correlation plot for continuous features
+
+    Args:
+        train_df (pl.DataFrame): Training DataFrame
+        continuous_cols (List[str]): List of column names for numerical features
+    """
+    corr_matrix = train_df.select(numerical_cols).to_pandas().corr()
+
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f")
+    plt.title("Correlation Matrix of Continuous Features")
+    plt.show()
+
+
+def plot_numerical_feature_distributions(
+    train_df: pl.DataFrame, numerical_cols: List[str]
+) -> None:
+    """Plot numerical feature distributions
+
+    Args:
+        train_df (pl.DataFrame): Train dataframe
+        numerical_cols (List[str]): List of numerical columns
+    """
+    fig, ax = plt.subplots(3, 3, figsize=(12, 8), tight_layout=True)
+    ax = ax.ravel()
+
+    for i, column in enumerate(numerical_cols):
+        sns.histplot(
+            train_df.select(column).to_series(), bins="auto", kde=True, ax=ax[i]
+        )
+        ax[i].set_title(f"Distribution of {column}")
+        ax[i].set_xlabel(column)
+        ax[i].set_ylabel("Frequency")
+    plt.show()
+
+
+def plot_categorical_feature_distributions(
+    train_df: pl.DataFrame, categorical_cols: List[str]
+) -> None:
+    """Plot categorical feature distributions
+
+    Args:
+        train_df (pl.DataFrame): Train dataframe
+        categorical_cols (List[str]): List of categorical columns
+    """
+    fig, ax = plt.subplots(2, 2, figsize=(10, 6), tight_layout=True)
+    ax = ax.ravel()
+
+    for i, column in enumerate(categorical_cols):
+        sns.countplot(x=train_df.select(column).to_series(), ax=ax[i])
+        ax[i].set_title(f"Count Plot of {column}")
+        ax[i].set_xlabel(column)
+        ax[i].set_ylabel("Count")
+        if column == "body_part":
+            ax[i].tick_params(axis="x", rotation=45)
+
+    sns.countplot(x=train_df.select("outcome").to_series(), ax=ax[-1])
+    ax[-1].set_xlabel("Outcome")
+    ax[-1].set_ylabel("Count")
+    ax[-1].set_title("Count Plot of Outcome")
+    plt.show()
+
+
+def plot_single_feature_distribution(
+    train_df: pl.DataFrame, col: str, bins: int | str = 30, kde: bool = True
+) -> None:
+    """Plot single feature distribution plot
+
+    Args:
+        train_df (pl.DataFrame): Training DataFrame
+        col (str): Column name to plot
+        bins (int | str, optional): Number of bins or binning strategy. Defaults to 30.
+        kde (bool, optional): Whether to show KDE curve. Defaults to True.
+    """
+    if type(bins) == str:
+        bins = "auto"
+        print("Bins is string type: defaulting to 'auto'")
+
+    sns.histplot(train_df.select(pl.col(col)).to_series(), bins=bins, kde=kde)
+    plt.show()
+
+
+def plot_mutual_information(
+    X_train: pl.DataFrame,
+    y_train: pl.DataFrame,
+    discrete_features: List[bool] | str = "auto",
+):
+    """Plot mutual information
+
+    Args:
+        X_train (pl.DataFrame): Training features
+        y_train (pl.DataFrame): Training labels
+        discrete_features (List[bool] | str, optional): How to handle discrete features. Defaults to "auto".
+    """
+    mi = mutual_info_classif(
+        X_train, y_train, discrete_features=discrete_features, random_state=165
+    )
+
+    mi_df = pl.DataFrame({"Feature": X_train.columns, "Mutual Information": mi})
+    mi_df = mi_df.sort(by="Mutual Information", descending=True)
+
+    plt.figure(figsize=(8, 5))
+    sns.barplot(x="Mutual Information", y="Feature", data=mi_df, palette="Blues_d")
+    plt.title("Mutual Information of Features with Target")
+    plt.xlabel("Mutual Information")
+    plt.ylabel("Feature")
+    plt.tight_layout()
+    plt.show()
+
+
+def get_parent_run_id_from_experiment(
+    result: OuterCVResults | None, experiment_id: str
+) -> str:
+    """Get parent run ID from experiment
+
+    Args:
+        result (OuterCVResults | None): OuterCVResults object or None
+        experiment_id (str): Experiment ID
+
+    Returns:
+        str: Parent run ID
+    """
+    mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient()
+
+    if result is not None:
+        parent_run_id = client.get_run(result.run_ids[0])
+    else:
+        runs = client.search_runs(
+            experiment_ids=[experiment_id],
+            order_by=["attributes.start_time DESC"],
+        )
+
+        parent_run_id = next(
+            run.info.run_id for run in runs if "mlflow.parentRunId" not in run.data.tags
+        )
+
+    return parent_run_id
+
+
+def compute_generalisation_error_from_run_id_and_experiment_id(
+    parent_run_id: str, experiment_id: str
+) -> None:
+    """Compute generalisation error from runs
+
+    Args:
+        parent_run_id (str): Parent run ID
+        experiment_id (str): Experiment ID
+    """
+    mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient()
+
+    child_runs = client.search_runs(
+        experiment_ids=[experiment_id],
+        filter_string=f"tags.mlflow.parentRunId = '{parent_run_id}'",
+    )
+
+    loss = [run.data.metrics["log_loss"] for run in child_runs]
+    mean = np.mean(loss)
+    std = np.std(loss, ddof=1)
+
+    print(
+        f"95% confidence interval for best estimate of generalisation: {mean} ± {1.96*std / np.sqrt(len(loss))}"
+    )
+
+
+def get_best_params_and_features_from_parent_run_id(
+    parent_run_id: str,
+) -> Tuple[dict, np.ndarray]:
+    """Get params and features from parent run
+
+    Args:
+        parent_run_id (str): Parent run ID
+
+    Returns:
+        Tuple[dict, np.ndarray]: Best parameters and selected features
+    """
+    mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient()
+    parent_run = client.get_run(parent_run_id)
+
+    lgbm_params = LGBMParams(**parent_run.data.params)
+    best_params = lgbm_params.model_dump()
+    best_features = np.array(parent_run.data.tags["selected_features"].split(","))
+
+    return (best_params, best_features)
+
+
+def get_registered_model(
+    model_type: str, model_registry_name: str, version: str = "latest"
+) -> XGBClassifier | LGBMClassifier:
+    """Get registered model from MLFlow
+
+    Args:
+        model_type (str): Type of the model
+        model_registry_name (str): Name of the model registry
+        version (str, optional): Version of the model. Defaults to "latest".
+
+    Raises:
+        ValueError: If the model type is unsupported
+
+    Returns:
+        XGBClassifier | LGBMClassifier: Trained model
+    """
+    log_fn_mapping = {
+        xgboost_model_name: mlflow.xgboost.load_model,
+        lightgbm_model_name: mlflow.lightgbm.load_model,
+    }
+
+    log_fn = log_fn_mapping.get(model_type)
+    if log_fn is None:
+        raise ValueError(f"Unsupported model type: {model_type}")
+
+    trained_model = log_fn(model_uri=f"models:/{model_registry_name}/{version}")
+    return trained_model

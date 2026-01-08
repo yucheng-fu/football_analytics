@@ -1,9 +1,11 @@
-import polars as pl
-import numpy as np
-from sklearn.mixture import GaussianMixture
-from utils.utils import invert_orientation
-from utils.statics import PITCH_X, PITCH_Y
 from typing import Tuple
+
+import numpy as np
+import polars as pl
+from sklearn.mixture import GaussianMixture
+
+from utils.statics import PITCH_X, PITCH_Y
+from utils.utils import invert_orientation
 
 
 class GMMHandler:
@@ -149,14 +151,24 @@ class GMMHandler:
             (pl.col("type") == "Dribble") & (pl.col("dribble_outcome") == "Complete")
         ).select("location", "dribble_outcome")
 
-    def get_optimal_number_of_compoents_using_bic(
+    def get_optimal_number_of_components_using_bic(
         self, features: pl.DataFrame, max_components: int = 50, random_state: int = 42
     ) -> int:
+        """
+
+        Args:
+            features (pl.DataFrame): Input features for GMM
+            max_components (int, optional): Maximum number of components to consider. Defaults to 50.
+            random_state (int, optional): Random state for reproducibility. Defaults to 42.
+
+        Returns:
+            int: Number of components according to BIC
+        """
         n_components_range = range(1, max_components)
         bic = []
 
         for n_components in n_components_range:
-            gmm = GaussianMixture(n_components=n_components, random_state=42)
+            gmm = GaussianMixture(n_components=n_components, random_state=random_state)
             gmm.fit(features)
             bic.append(gmm.bic(features))
 
@@ -166,8 +178,17 @@ class GMMHandler:
     def fit_gmm(
         self, features: pl.DataFrame, random_state: int = 42
     ) -> GaussianMixture:
+        """Fit GMM model
+
+        Args:
+            features (pl.DataFrame): Input features for GMM
+            random_state (int, optional): Random state for reproducibility. Defaults to 42.
+
+        Returns:
+            GaussianMixture: Fitted GMM model
+        """
         n_components = (
-            self.get_optimal_number_of_compoents_using_bic(features)
+            self.get_optimal_number_of_components_using_bic(features)
             if self.optimal_n_components is None
             else self.optimal_n_components
         )
