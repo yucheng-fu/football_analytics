@@ -319,14 +319,14 @@ def plot_correlations(train_df: pl.DataFrame, numerical_cols: List[str]) -> None
     """
     corr_matrix = train_df.select(numerical_cols).to_pandas().corr()
 
-    plt.figure(figsize=(8, 6))
+    plt.figure(figsize=(16, 9))
     sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f")
     plt.title("Correlation Matrix of Continuous Features")
     plt.show()
 
 
 def plot_numerical_feature_distributions(
-    train_df: pl.DataFrame, numerical_cols: List[str]
+    train_df: pl.DataFrame, numerical_cols: List[str], rows: int = 3, cols: int = 3
 ) -> None:
     """Plot numerical feature distributions
 
@@ -334,7 +334,7 @@ def plot_numerical_feature_distributions(
         train_df (pl.DataFrame): Train dataframe
         numerical_cols (List[str]): List of numerical columns
     """
-    fig, ax = plt.subplots(3, 3, figsize=(12, 8), tight_layout=True)
+    fig, ax = plt.subplots(rows, cols, figsize=(16, 9), tight_layout=True)
     ax = ax.ravel()
 
     for i, column in enumerate(numerical_cols):

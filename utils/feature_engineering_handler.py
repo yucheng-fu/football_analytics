@@ -57,7 +57,7 @@ class FeatureEngineeringHandler:
             self.X = self.X.with_columns(pl.col(col).log1p().alias(f"log_{col}"))
         return self.X
 
-    def preprocess_angle_column(self) -> pl.DataFrame:
+    def preprocess_angle_column(self, drop_angle_column: bool = False) -> pl.DataFrame:
         """Create sine and cosine features from angle column
 
         Returns:
@@ -70,7 +70,8 @@ class FeatureEngineeringHandler:
             ]
         )
 
-        self.X = self.X.drop(pl.col("angle"))
+        if drop_angle_column:
+            self.X = self.X.drop(pl.col("angle"))
 
         return self.X
 
