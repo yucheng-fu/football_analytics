@@ -8,6 +8,7 @@ class OuterCVResults:
     scores: List[float] = field(default_factory=list)
     params: List[dict] = field(default_factory=list)
     features: List[Any] = field(default_factory=list)
+    parent_run_id: Optional[str] = None
     run_ids: List[str] = field(default_factory=list)
     experiment_ids: List[str] = field(default_factory=list)
 

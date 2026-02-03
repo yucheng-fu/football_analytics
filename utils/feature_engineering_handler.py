@@ -23,6 +23,18 @@ class FeatureEngineeringHandler:
 
         return self.X
 
+    def categorical_columns_to_int(self, columns: list[str]) -> pl.DataFrame:
+        """Convert categorical columns to integer codes
+
+        Returns:
+            pl.DataFrame: DataFrame with categorical columns converted to integer codes
+        """
+
+        for col in columns:
+            self.X = self.X.with_columns(pl.col(col).cast(pl.Categorical).alias(col))
+
+        return self.X
+
     def preprocess_length_column(self) -> pl.DataFrame:
         """Convert from yard to meter
 
@@ -73,6 +85,47 @@ class FeatureEngineeringHandler:
         if drop_angle_column:
             self.X = self.X.drop(pl.col("angle"))
 
+        return self.X
+
+    def start_distance_to_goal_column(self) -> pl.DataFrame:
+        """_summary_
+
+        Returns:
+            pl.DataFrame: _description_
+        """
+        # The  goal is at (120, 40)
+        self.X = self.X.with_columns(
+            (
+                ((pl.col("start_x") - 120) ** 2 + (pl.col("start_y") - 40) ** 2).sqrt()
+            ).alias("start_distance_to_goal")
+        )
+        return self.X
+
+    def end_distance_to_goal_column(self) -> pl.DataFrame:
+        """_summary_
+
+        Returns:
+            pl.DataFrame: _description_
+        """
+        # The  goal is at (120, 40)
+        self.X = self.X.with_columns(
+            (((pl.col("end_x") - 120) ** 2 + (pl.col("end_y") - 40) ** 2).sqrt()).alias(
+                "end_distance_to_goal"
+            )
+        )
+        return self.X
+
+    def progressive_distance_column(self) -> pl.DataFrame:
+        """Difference between start and end distance to goal
+
+        Returns:
+            pl.DataFrame: _description_
+        """
+        self.X = self.X.with_columns(
+            (pl.col("start_distance_to_goal") - pl.col("end_distance_to_goal")).alias(
+                "progressive_distance"
+            )
+        )
         return self.X
 
     def preprocess_direction_columns(self) -> pl.DataFrame:

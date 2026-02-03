@@ -1,5 +1,5 @@
 from typing import Tuple, List
-from xmlrpc import client
+from mlflow.entities import ViewType
 
 import matplotlib.pyplot as plt
 import mplsoccer as mpl
@@ -437,7 +437,7 @@ def get_parent_run_id_from_experiment(
     client = MlflowClient()
 
     if result is not None:
-        parent_run_id = client.get_run(result.run_ids[0])
+        parent_run_id = client.get_run(result.parent_run_id).info.run_id
     else:
         runs = client.search_runs(
             experiment_ids=[experiment_id],
@@ -466,6 +466,7 @@ def compute_generalisation_error_from_run_id_and_experiment_id(
     child_runs = client.search_runs(
         experiment_ids=[experiment_id],
         filter_string=f"tags.mlflow.parentRunId = '{parent_run_id}'",
+        run_view_type=ViewType.ALL,
     )
 
     loss = [run.data.metrics["log_loss"] for run in child_runs]
