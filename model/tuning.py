@@ -16,12 +16,12 @@ from mlflow.entities import Run
 from mlflow.models import infer_signature
 from mlflow.tracking import MlflowClient
 from mlflow.utils.mlflow_tags import MLFLOW_PARENT_RUN_ID
-from pipeline.feature_engineering_transformer import FeatureEngineeringTransformer
 import numpy as np
 import logging
 from model.data_classes import OuterCVResults
 from optuna.integration import LightGBMPruningCallback
 from lightgbm.callback import early_stopping
+from feature_engineering.openfe import OpenFE
 
 
 class ModelCVEvaluator:
@@ -331,22 +331,6 @@ class ModelCVEvaluator:
             np.ndarray: Maximum mean cross-validation score obtained by the Optuna trial across the inner folds
         """
         params = self.fetch_param_suggestions(trial)
-        base_estimator = self.fetch_model()
-        base_estimator.set_params(**params)
-
-        feature_engineering_transformer = FeatureEngineeringTransformer(
-            cat_columns=self.categorical_columns,
-            how_to_handle_cat_columns="onehot",
-            drop_angle_column=False,
-        )
-
-        pipeline = Pipeline(
-            [
-                ("feature_engineering", feature_engineering_transformer),
-                ("model", base_estimator),
-            ]
-        )
-
         inner_fold_scores = []
 
         for j, (inner_train_idx, inner_val_idx) in enumerate(
@@ -361,6 +345,9 @@ class ModelCVEvaluator:
                 y_train_outer[inner_val_idx],
             )
 
+            base_estimator = self.fetch_model()
+            base_estimator.set_params(**params)
+
             base_estimator.fit(
                 X_train_inner,
                 y_train_inner,
@@ -371,7 +358,7 @@ class ModelCVEvaluator:
                     early_stopping(stopping_rounds=50, verbose=False),
                 ],
                 categorical_feature=(
-                    self.categorical_columns if self.categorical_columns else ""
+                    self.categorical_columns if self.categorical_columns else "auto"
                 ),
             )
 
@@ -479,7 +466,6 @@ class ModelCVEvaluator:
 
         X_pd = X_train_outer.to_pandas()
         for idx in self.categorical_columns:
-            # .iloc[:, idx] targets the column by its position (0-indexed)
             X_pd.iloc[:, idx] = X_pd.iloc[:, idx].astype("category")
 
         y_np = y_train_outer.to_numpy().ravel()
@@ -518,8 +504,6 @@ class ModelCVEvaluator:
         self.logger.info("Fitting final model with best hyperparameters...")
         final_model = self.fetch_model()
         final_model.set_params(**best_params)
-
-        pipe = Pipeline(["model"])
 
         final_model.fit(
             X=X_train_outer[selected_features],
