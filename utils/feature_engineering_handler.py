@@ -67,6 +67,8 @@ class FeatureEngineeringHandler:
         """
         for col in ["length", "duration"]:
             self.X = self.X.with_columns(pl.col(col).log1p().alias(f"log_{col}"))
+        # self.X = self.X.drop(pl.col("length"))
+        # self.X = self.X.drop(pl.col("duration"))
         return self.X
 
     def preprocess_angle_column(self, drop_angle_column: bool = False) -> pl.DataFrame:
