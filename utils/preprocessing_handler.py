@@ -15,7 +15,9 @@ class PreprocessingHandler:
 
         self.df = self.df.with_columns(pl.col("body_part").fill_null("Unknown"))
 
-        self.df = self.df.with_columns(pl.col("under_pressure").fill_null(False))
+        self.df = self.df.with_columns(
+            pl.col("under_pressure").fill_null(False).cast(pl.Int64)
+        )
 
         return self.df
 

@@ -1,16 +1,17 @@
-from typing import Callable, Tuple
-
+from typing import Callable, Tuple, Optional, Any
+import tempfile
 import polars as pl
+import os
+import random
 import pickle
-from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 import lightgbm as lgb
 from sklearn.model_selection import StratifiedKFold, train_test_split
-from sklearn.feature_selection import RFECV
+from sklearn.feature_selection import RFE
 from sklearn.metrics import log_loss
 import optuna
 import matplotlib.pyplot as plt
-from utils.statics import xgboost_model_name, lightgbm_model_name, tracking_uri
+from utils.statics import lightgbm_model_name, tracking_uri
 import mlflow
 from mlflow.entities import Run
 from mlflow.models import infer_signature
@@ -18,9 +19,16 @@ from mlflow.tracking import MlflowClient
 from mlflow.utils.mlflow_tags import MLFLOW_PARENT_RUN_ID
 import numpy as np
 import logging
+import shap
 from model.data_classes import OuterCVResults
-from optuna.integration import LightGBMPruningCallback, XGBoostPruningCallback
+from optuna.integration import LightGBMPruningCallback
+from optuna.visualization import plot_param_importances
 from lightgbm.callback import early_stopping
+from feature_engineering.openfe import OpenFE
+import pandas as pd
+from feature_engineering.FeatureEngineeringTransformer import ColumnTransformer
+from feature_engineering.RowWiseTransformations import RowWiseTransformations
+from feature_engineering.OpenFETransformations import OpenFETransformations
 
 
 class ModelCVEvaluator:
@@ -32,28 +40,83 @@ class ModelCVEvaluator:
     def __init__(
         self,
         model_type: str,
+        row_wise_transformations: RowWiseTransformations | None,
+        open_fe_transformations: OpenFETransformations,
         n_inner_splits: int = 5,
         n_outer_splits: int = 10,
         n_trials: int = 20,
+        use_feature_selection: bool = False,
+        use_feature_engineering: bool = False,
+        use_ofe: bool = False,
         run_name: str = "baseline_hyperparameter_tuning",
         experiment_name: str = "Model selection and hyperparameter tuning",
-        use_initial_tuning: bool = True,
+        log_hyperparameter_trials: bool = False,
+        log_parameter_importance: bool = False,
+        log_feature_importance: bool = False,
+        categorical_columns: list[str] | None = None,
+        ohe_columns: list[str] | None = None,
     ):
         self.model_type = model_type
+        self.row_wise_transformations = row_wise_transformations
+        self.open_fe_transformations = open_fe_transformations
         self.n_inner_splits = n_inner_splits
         self.n_outer_splits = n_outer_splits
         self.n_trials = n_trials
+        self.use_feature_selection = use_feature_selection
+        self.use_feature_engineering = use_feature_engineering
+        self.use_ofe = use_ofe
         self.run_name = run_name
         self.experiment_name = experiment_name
-        self.use_initial_tuning = use_initial_tuning
+        self.log_hyperparameter_trials = log_hyperparameter_trials
+        self.log_parameter_importance = (log_parameter_importance,)
+        self.log_feature_importance = (log_feature_importance,)
+        self.categorical_columns = (
+            categorical_columns if categorical_columns is not None else []
+        )
+        self.ohe_columns = ohe_columns if ohe_columns is not None else []
+        self.feature_transformer_config = {
+            "ohe_columns": self.ohe_columns,
+            "cat_columns": self.categorical_columns,
+        }
+        self.seed = 165
+        self.n_jobs = os.cpu_count() or 1
         self.inner_cv = StratifiedKFold(
-            n_splits=self.n_inner_splits, shuffle=True, random_state=165
+            n_splits=self.n_inner_splits, shuffle=True, random_state=self.seed
         )
         self.outer_cv = StratifiedKFold(
-            n_splits=self.n_outer_splits, shuffle=True, random_state=165
+            n_splits=self.n_outer_splits, shuffle=True, random_state=self.seed
         )
+        self._set_global_seed()
 
-    def setup_mlflow(self) -> None:
+    def _set_global_seed(self):
+        np.random.seed(self.seed)
+        random.seed(self.seed)
+
+    def _categorical_feature_names(self, X_pd: pd.DataFrame) -> list[str]:
+        names: list[str] = []
+        for col in self.categorical_columns:
+            # If column in self.categorical_columns is string and in dataframe column, append to names
+            if isinstance(col, str):
+                if col in X_pd.columns:
+                    names.append(col)
+        return names
+
+    def _apply_categorical_dtypes(self, X_pd: pd.DataFrame) -> pd.DataFrame:
+        X_pd_copy = X_pd.copy()
+
+        # Ensure all text-like columns are categorical for LightGBM/RFE compatibility.
+        object_like_cols = X_pd_copy.select_dtypes(include=["object", "string"]).columns
+        for name in object_like_cols:
+            X_pd_copy[name] = X_pd_copy[name].astype("category")
+
+        for name in self._categorical_feature_names(X_pd_copy):
+            X_pd_copy[name] = X_pd_copy[name].astype("category")
+        return X_pd_copy
+
+    def _build_column_transformer(self) -> ColumnTransformer:
+        return ColumnTransformer(**self.feature_transformer_config)
+
+    def _setup_mlflow(self) -> None:
         """
         Sets up tracking uri and experiment for MLFlow
 
@@ -69,28 +132,30 @@ class ModelCVEvaluator:
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         logging.getLogger("mlflow").setLevel(logging.ERROR)
         logging.getLogger("optuna").setLevel(logging.WARNING)
+        logging.getLogger("kaleido").setLevel(logging.WARNING)
+        logging.getLogger("choreographer").setLevel(logging.WARNING)
 
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment_name=self.experiment_name)
 
-    def fetch_model(self) -> XGBClassifier | LGBMClassifier:
+    def _fetch_model(self) -> LGBMClassifier:
         """
         Return a fresh estimator instance for the configured model type.
 
         Returns:
-            XGBClassifier | LGBMClassifier: An uninitialized classifier corresponding to self.model_type.
+            LGBMClassifier: An uninitialized classifier corresponding to self.model_type.
 
         Raises:
             ValueError: If self.model_type is not a supported model name.
         """
-        if self.model_type == xgboost_model_name:
-            return XGBClassifier()
-        elif self.model_type == lightgbm_model_name:
-            return LGBMClassifier(verbose=-1)
+        if self.model_type == lightgbm_model_name:
+            return LGBMClassifier(
+                verbose=-1, importance_type="gain", random_state=self.seed
+            )
 
         raise ValueError(f"Unsupported model type: {self.model_type}")
 
-    def fetch_param_suggestions(self, trial: optuna.trial.Trial) -> dict:
+    def _fetch_param_suggestions(self, trial: optuna.trial.Trial) -> dict:
         """
         Generate hyperparameter suggestions for the configured model using an Optuna trial.
 
@@ -103,40 +168,15 @@ class ModelCVEvaluator:
         Raises:
             ValueError: If self.model_type is not one of the supported model names.
         """
-        if self.model_type == xgboost_model_name:
-            return {
-                "n_estimators": trial.suggest_int(
-                    "n_estimators", 100, 1000
-                ),  # number of trees
-                "max_depth": trial.suggest_int(
-                    "max_depth", 3, 100
-                ),  # maximum depth of each tree
-                "learning_rate": trial.suggest_float(
-                    "learning_rate", 0.01, 0.3
-                ),  # step size for optimisation
-                "subsample": trial.suggest_float(
-                    "subsample", 0.5, 1.0
-                ),  # fraction of samples to be used for each tree
-                "colsample_bytree": trial.suggest_float(
-                    "colsample_bytree", 0.5, 1.0
-                ),  # fraction of features used per tree
-                "min_child_weight": trial.suggest_int(
-                    "min_child_weight", 1, 100
-                ),  # minimum sum of instance weights needed in a leaf to allow a split
-                "alpha": trial.suggest_float("alpha", 0.0, 1.0),  # L1 regularisation
-                "lambda": trial.suggest_float("lambda", 0.0, 1.0),  # L2 regularisation
-                "eval_metric": "logloss",  # evaluation metric
-                "random_state": 165,  # seed for reproducibility
-            }
-
-        elif self.model_type == lightgbm_model_name:
+        if self.model_type == lightgbm_model_name:
             max_depth = trial.suggest_int("max_depth", 3, 100)
             max_num_leaves = min(
                 2**max_depth - 1, 512
             )  # less than 2^(max_depth), cap at 512
             num_leaves = trial.suggest_int("num_leaves", 7, max_num_leaves)
 
-            return {
+            # Model paramteres
+            params = {
                 "n_estimators": trial.suggest_int(
                     "n_estimators", 100, 1000
                 ),  # number of trees
@@ -168,30 +208,35 @@ class ModelCVEvaluator:
                 "verbose": -1,  # suppress warnings and info
             }
 
+            # RFE
+            params["n_features_to_select"] = trial.suggest_float(
+                "n_features_to_select", 0.5, 1.0
+            )
+
+            return params
+
         raise ValueError(f"Unsupported model type: {self.model_type}")
 
-    def log_model(
+    def _log_model(
         self,
-        final_model: XGBClassifier | LGBMClassifier,
-        X_data: pl.DataFrame,
+        final_model: LGBMClassifier,
+        X_data: pd.DataFrame,
         output: np.ndarray,
     ) -> None:
         """Log model in outer fold run
 
         Args:
-            final_model (XGBClassifier | LGBMClassifier): Trained model
-            X_data (pl.DataFrame): One outer fold of X
+            final_model (LGBMClassifier): Trained model
+            X_data (pd.DataFrame): One outer fold of X
             output (np.ndarray): Predictions from final_model
 
         Raises:
             ValueError: If self.model_type is not a supported model name.
         """
-        X_data_pd = X_data.to_pandas()
-        signature = infer_signature(X_data_pd, output)
-        input_example = X_data_pd.head(10)
+        signature = infer_signature(X_data, output)
+        input_example = X_data.head(10)
 
         log_fn_mapping = {
-            xgboost_model_name: mlflow.xgboost.log_model,
             lightgbm_model_name: mlflow.lightgbm.log_model,
         }
 
@@ -206,7 +251,22 @@ class ModelCVEvaluator:
             input_example=input_example,
         )
 
-    def append_and_log_metrics_and_params(
+    def _log_artifact(self, name: str, object: Any) -> None:
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_file_path = os.path.join(tmp_dir, f"{name}.pkl")
+
+            with open(tmp_file_path, "wb") as f:
+                pickle.dump(object, f)
+
+            mlflow.log_artifact(
+                local_path=tmp_file_path,
+                artifact_path=f"pickles/{name}",
+            )
+
+    def _log_figure(self, name: str, fig: plt.figure):
+        mlflow.log_figure(fig, f"plots/{name}.png")
+
+    def _append_and_log_metrics_and_params(
         self,
         outer_cv_results: OuterCVResults,
         selected_features: np.ndarray,
@@ -239,9 +299,14 @@ class ModelCVEvaluator:
         mlflow.log_metric("log_loss", outer_fold_log_loss)
         mlflow.log_params(best_params)
         if study is not None:
-            with open("optuna_study.pkl", "wb") as f:
-                pickle.dump(study, f)
-            mlflow.log_artifact("optuna_study.pkl")
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                tmp_file_path = os.path.join(tmp_dir, "optuna_study.pkl")
+
+                with open(tmp_file_path, "wb") as f:
+                    pickle.dump(study, f)
+                mlflow.log_artifact(
+                    "optuna_study.pkl", artifact_path="pickles/optuna_study.pkl"
+                )
 
     def _mlflow_callback(
         self, outer_fold_run_id: str, experiment_name: str
@@ -292,174 +357,180 @@ class ModelCVEvaluator:
 
         return _callback
 
-    def get_features(self, X_train_outer: pl.DataFrame, rfecv: RFECV) -> np.ndarray:
-        """Get features from feature selection using RFECV
-
-        Args:
-            X_train_outer (pl.DataFrame): Outer fold of X_train
-            rfecv (RFECV): RFECV object
-
-        Returns:
-            np.ndarray: array of selected features
-        """
-        selected_feature_mask = rfecv.get_support()
-        selected_features = np.array(X_train_outer.columns)[selected_feature_mask]
-        return selected_features
-
-    def eval_validation_loss(
+    def _eval_validation_loss(
         self,
-        X_val_outer: pl.DataFrame,
-        y_val_outer: pl.DataFrame,
+        X_val_outer: pd.DataFrame,
+        y_val_outer: np.ndarray,
         selected_features: np.ndarray,
-        final_model: LGBMClassifier | XGBClassifier,
+        final_model: LGBMClassifier,
+        category_schema: dict[str, pd.Index],
+        column_transformer: Optional[ColumnTransformer],
     ) -> float:
         """Evaluate model on validation set
 
         Args:
-            X_val_outer (pl.DataFrame): X_val outer fold
-            y_val_outer (pl.DataFrame): y_val outer fold
+            X_val_outer (pd.DataFrame): X_val outer fold
+            y_val_outer (np.ndarray): y_val outer fold
             rfecv (RFECV | None): RFECV obejct (optional)
-            final_model (LGBMClassifier | XGBClassifier): trained final model
+            final_model (LGBMClassifier): trained final model
+            category_schema (dict[str, pd.Index]): Training-time categories for categorical features
 
         Returns:
             float: log_loss evaluted on the outer fold validation set
         """
-        y_pred_proba = final_model.predict_proba(
-            X_val_outer.select(selected_features).to_numpy()
-        )
+        X_val_outer_pd = self._apply_categorical_dtypes(X_val_outer)
+
+        # 1. Feature Engineering
+        if self.use_feature_engineering:
+            X_val_outer_pd = column_transformer.transform(X_val_outer_pd)
+
+        X_val_outer_selected = X_val_outer_pd[selected_features]
+        for col, cats in category_schema.items():
+            if col in X_val_outer_selected.columns:
+                X_val_outer_selected[col] = pd.Categorical(
+                    X_val_outer_selected[col], categories=cats
+                )
+
+        y_pred_proba = final_model.predict_proba(X_val_outer_selected)
 
         outer_fold_log_loss = log_loss(y_val_outer, y_pred_proba)
 
-        self.log_model(
+        self._log_model(
             final_model=final_model,
-            X_data=X_val_outer.select(selected_features),
+            X_data=X_val_outer_selected,
             output=y_pred_proba,
         )
 
         return outer_fold_log_loss
 
+    def _get_selected_features(
+        self,
+        X_train: pd.DataFrame,
+        y_train: np.ndarray,
+        rfe: RFE,
+        X_val: Optional[pd.DataFrame] = None,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
+        if self.use_feature_selection == False:
+            selected_features = X_train.columns.to_list()
+            return (X_train, X_val, selected_features)
+
+        X_train_rfe = X_train.copy()
+        for col in X_train_rfe.select_dtypes(include=["category"]).columns:
+            X_train_rfe[col] = X_train_rfe[col].cat.codes
+
+        rfe.fit(X_train_rfe, y_train)
+        selected_features = np.array(X_train.columns[rfe.support_])
+        X_train_selected = X_train[selected_features]
+        X_val_selected = X_val[selected_features] if X_val is not None else None
+
+        return (X_train_selected, X_val_selected, selected_features)
+
+    def _get_feature_selector(
+        self, fit_params: dict, n_features_to_select: float, transform: str = "pandas"
+    ) -> RFE:
+        if transform not in ["default", "pandas", "polars"]:
+            raise ValueError(f"Invalid transform for RFE: {transform}")
+
+        base_estimator = self._fetch_model()
+        base_estimator.set_params(**fit_params)
+
+        rfe = RFE(estimator=base_estimator, n_features_to_select=n_features_to_select)
+        rfe.set_output(transform=transform)
+
+        return rfe
+
     def _objective(
         self,
         trial: optuna.trial.Trial,
-        X_train_outer: pl.DataFrame,
-        y_train_outer: pl.DataFrame,
+        X_train_outer: pd.DataFrame,
+        y_train_outer: np.ndarray,
     ) -> np.ndarray:
         """Objective function for Optuna hyperparameter tuning
 
         Args:
             trial (optuna.trial.Trial): Optuna trial
-            X_train_outer (pl.DataFrame): X_train outer fold split
-            y_train_outer (pl.DataFrame): y_train outer fold split
+            X_train_outer (pd.DataFrame): X_train outer fold split
+            y_train_outer (np.ndarray): y_train outer fold split
 
         Returns:
             np.ndarray: Maximum mean cross-validation score obtained by the Optuna trial across the inner folds
         """
-        params = self.fetch_param_suggestions(trial)
-        base_estimator = self.fetch_model()
-        base_estimator.set_params(**params)
-
+        all_params = self._fetch_param_suggestions(trial)
         inner_fold_scores = []
 
-        for j, (inner_train_idx, inner_val_idx) in enumerate(
-            self.inner_cv.split(X_train_outer, y_train_outer)
+        for inner_train_idx, inner_val_idx in self.inner_cv.split(
+            X_train_outer, y_train_outer
         ):
-            X_train_inner, X_val_inner = (
-                X_train_outer[inner_train_idx],
-                X_train_outer[inner_val_idx],
-            )
+            X_train_inner = X_train_outer.iloc[inner_train_idx]
+            X_val_inner = X_train_outer.iloc[inner_val_idx]
             y_train_inner, y_val_inner = (
                 y_train_outer[inner_train_idx],
                 y_train_outer[inner_val_idx],
             )
 
-            base_estimator.fit(
-                X_train_inner,
-                y_train_inner,
-                eval_set=[(X_val_inner, y_val_inner)],
-                eval_metric="binary_logloss",
-                callbacks=[
-                    (
-                        LightGBMPruningCallback(trial, "binary_logloss")
-                        if self.model_type == lightgbm_model_name
-                        else XGBoostPruningCallback(trial, "logloss")
-                    ),
-                    early_stopping(stopping_rounds=50, verbose=False),
-                ],
+            # 1. Feature engineering
+            if self.use_feature_engineering:
+                feature_transformer = self._build_column_transformer()
+                X_train_inner = feature_transformer.fit_transform(X_train_inner)
+                X_val_inner = feature_transformer.transform(X_val_inner)
+
+            model, _, _ = self._fit_model_and_select_features(
+                X_train=X_train_inner,
+                y_train=y_train_inner,
+                params=all_params,
+                X_val=X_val_inner,
+                y_val=y_val_inner,
+                trial=trial,
             )
 
-            y_pred_val = base_estimator.predict_proba(X_val_inner)
+            # Append loss of last iteration to inner_fold_scores
+            inner_fold_scores.append(
+                model.evals_result_["valid_0"]["binary_logloss"][-1]
+            )
 
-            score = log_loss(y_val_inner, y_pred_val)
-            inner_fold_scores.append(score)
-
-            mean_score = np.mean(inner_fold_scores)
+        mean_score = np.mean(inner_fold_scores)
 
         return mean_score
 
-    def init_hyperparameter_tuning(
-        self, X_train_outer: pl.DataFrame, y_train_outer: pl.DataFrame
-    ) -> dict:
-        """Start initial hyperparameter tuning. Run for 20 trials
+    def _plot_feature_importance(
+        self, X_train: pd.DataFrame, model: LGBMClassifier
+    ) -> plt.figure:
 
-        Args:
-            X_train_outer (pl.DataFrame): Outer fold of X_train
-            y_train_outer (pl.DataFrame): Outer fold of y_train
+        # Create a figure explicitly
+        fig, ax = plt.subplots(figsize=(8, 6))
+        explainer = shap.TreeExplainer(model=model)
+        shap_values = explainer.shap_values(X_train)
 
-        Returns:
-            dict: Dicitonary of best hyperparameters found in the initial tuning
-        """
-        if self.use_initial_tuning:
-            self.logger.info("Starting initial hyperparameter tuning...")
-            init_study = optuna.create_study(direction="minimize")
+        shap.summary_plot(shap_values, X_train, plot_type="bar", show=False, ax=ax)
 
-            init_study.optimize(
-                lambda trial: self._objective(trial, X_train_outer, y_train_outer),
-                n_trials=20,
-                n_jobs=-1,
-                show_progress_bar=True,
-            )
+        return fig
 
-            best_init_trial = init_study.best_trial
-            init_params = best_init_trial.params.copy()
-
-            with mlflow.start_run(
-                nested=True, run_name=f"Initial_hyperparameter_tuning_{self.model_type}"
-            ):
-                mlflow.log_params(init_params)
-                mlflow.log_metric("log_loss", init_study.best_value)
-
-            return init_params
-
-        else:
-            return {}
-
-    def hyperparameter_tuning(
+    def _hyperparameter_tuning(
         self,
-        X_train_outer: pl.DataFrame,
-        y_train_outer: pl.DataFrame,
-        selected_features: np.ndarray,
+        X_train_outer: pd.DataFrame,
+        y_train_outer: np.ndarray,
         callback_fn: Callable[[optuna.Study, optuna.trial.Trial], None],
     ) -> Tuple[optuna.study.Study, dict]:
         """Function for performing hyperparameter tuning with optuna.
 
         Args:
-            X_train_outer (pl.DataFrame): Outer fold of X_train
-            y_train_outer (pl.DataFrame): Outer fold of y_train
-            selected_features (np.ndarray): Array of selected features from RFECV
+            X_train_outer (pd.DataFrame): Outer fold of X_train
+            y_train_outer (np.ndarray): Outer fold of y_train
             callback_fn (Callable[[optuna.Study, optuna.trial.Trial], None]): Callback function for optuna study
 
         Returns:
             Tuple[optuna.study.Study, dict]: Optuna study object and dictionary of best hyperparameters
         """
         self.logger.info("Starting full hyperparameter tuning...")
-        study = optuna.create_study(direction="minimize")
+        sampler = optuna.samplers.TPESampler(seed=self.seed)
+        study = optuna.create_study(direction="minimize", sampler=sampler)
+
+        X_train_outer_pd = self._apply_categorical_dtypes(X_train_outer)
 
         study.optimize(
-            lambda trial: self._objective(
-                trial, X_train_outer[selected_features], y_train_outer
-            ),
+            lambda trial: self._objective(trial, X_train_outer_pd, y_train_outer),
             n_trials=self.n_trials,
-            n_jobs=-1,
+            n_jobs=self.n_jobs,
             show_progress_bar=True,
             callbacks=[callback_fn],
         )
@@ -467,64 +538,110 @@ class ModelCVEvaluator:
         best_trial = study.best_trial
         best_params = best_trial.params.copy()
 
+        if self.log_parameter_importance:
+            fig = plot_param_importances(study=study)
+            self._log_figure(name="parameter_importance", fig=fig)
+
         return study, best_params
 
-    def feature_selection(
+    def _fit_model_and_select_features(
         self,
-        X_train_outer: pl.DataFrame,
-        y_train_outer: pl.DataFrame,
-        init_params: dict,
-    ) -> np.ndarray:
-        """Feature selection using RFECV
+        X_train: pd.DataFrame,
+        y_train: np.ndarray,
+        params: dict,
+        X_val: Optional[pd.DataFrame] = None,
+        y_val: Optional[np.ndarray] = None,
+        trial: Optional[optuna.trial.Trial] = None,
+    ) -> Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index]]:
+        fit_params = params.copy()
+        n_features_to_select = fit_params.pop("n_features_to_select")
 
-        Args:
-            X_train_outer (pl.DataFrame): Outer fold of X_train
-            y_train_outer (pl.DataFrame): Outer fold of y_train
-            init_params (dict): Hyperparameters found in the initial tuning
-
-        Returns:
-            np.ndarray: Array of selected features
-        """
-        self.logger.info("Starting feature selection using RFECV...")
-        rfe_estimator = self.fetch_model()
-        rfe_estimator.set_params(**init_params)
-        rfecv = RFECV(
-            estimator=rfe_estimator,
-            step=1,
-            cv=self.inner_cv,
-            scoring="neg_log_loss",
-            n_jobs=-1,
+        # 1. Feature Selection
+        rfe = self._get_feature_selector(
+            fit_params=fit_params, n_features_to_select=n_features_to_select
         )
-        rfecv.fit(X_train_outer, y_train_outer)
 
-        selected_features = self.get_features(X_train_outer=X_train_outer, rfecv=rfecv)
+        X_train_selected, X_val_selected, selected_features = (
+            self._get_selected_features(
+                X_train=X_train,
+                X_val=X_val,
+                y_train=y_train,
+                rfe=rfe,
+            )
+        )
 
-        return selected_features
+        # 2. Categorical Handling
+        current_categories = X_train_selected.select_dtypes(
+            include=["category"]
+        ).columns.tolist()
+        category_schema = {
+            col: X_train_selected[col].cat.categories for col in current_categories
+        }
 
-    def fit_model(
+        # 3. Model Training
+        model = self._fetch_model()
+        model.set_params(**fit_params)
+
+        callbacks = []
+        if trial is not None:
+            callbacks.append(LightGBMPruningCallback(trial, "binary_logloss"))
+        # callbacks.append(early_stopping(stopping_rounds=50, verbose=False))
+
+        eval_set = [(X_val_selected, y_val)] if X_val_selected is not None else None
+        model.fit(
+            X_train_selected,
+            y_train,
+            eval_set=eval_set,
+            eval_metric="binary_logloss",
+            callbacks=callbacks if callbacks else None,
+            categorical_feature=current_categories if current_categories else "auto",
+        )
+
+        return model, selected_features, category_schema
+
+    def _fit_final_model(
         self,
-        X_train_outer: pl.DataFrame,
-        y_train_outer: pl.DataFrame,
+        X_train_outer: pd.DataFrame,
+        y_train_outer: np.ndarray,
         best_params: dict,
-        selected_features: np.ndarray,
-    ) -> XGBClassifier | LGBMClassifier:
+    ) -> Tuple[
+        LGBMClassifier, np.ndarray, dict[str, pd.Index], Optional[ColumnTransformer]
+    ]:
         """Fit model using the best hyperparameters and selected features
 
         Args:
-            X_train_outer (pl.DataFrame): Outer fold of X_train
-            y_train_outer (pl.DataFrame): Outer fold of y_train
+            X_train_outer (pd.DataFrame): Outer fold of X_train
+            y_train_outer (np.ndarray): Outer fold of y_train
             best_params (dict): Best hyperparameters found in the outer fold
             selected_features (np.ndarray): Array of selected features from RFECV
 
         Returns:
-            XGBClassifier | LGBMClassifier: Trained final model
+            Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index]]: Trained final model, selected features, and categorical schema
         """
         self.logger.info("Fitting final model with best hyperparameters...")
-        final_model = self.fetch_model()
-        final_model.set_params(**best_params)
-        final_model.fit(X=X_train_outer[selected_features], y=y_train_outer)
 
-        return final_model
+        fit_params = best_params
+        X_train_outer_pd = self._apply_categorical_dtypes(X_train_outer)
+
+        # 1. Feature Engineering
+        column_transformer = None
+        if self.use_feature_engineering:
+            column_transformer = self._build_column_transformer()
+            X_train_outer_pd = column_transformer.fit_transform(X_train_outer_pd)
+
+        final_model, selected_features, category_schema = (
+            self._fit_model_and_select_features(
+                X_train=X_train_outer_pd, y_train=y_train_outer, params=fit_params
+            )
+        )
+
+        if self.log_feature_importance:
+            fig = self._plot_feature_importance(
+                X_train=X_train_outer_pd[selected_features], model=final_model
+            )
+            self._log_figure(name="feature_importance", fig=fig)
+
+        return final_model, selected_features, category_schema, column_transformer
 
     def get_generalisation_error(
         self, X_train: pl.DataFrame, y_train: pl.DataFrame
@@ -539,58 +656,91 @@ class ModelCVEvaluator:
             OuterCVResults: Outer cross-validation results
         """
         outer_cv_results = OuterCVResults()
-        self.setup_mlflow()
-        with mlflow.start_run(run_name=f"{self.run_name}_{self.model_type}"):
+        self._setup_mlflow()
+        X_train_pd = X_train.to_pandas()
+        y_train_np = y_train.to_numpy().ravel()
+
+        # Apply rowwise transformations to the entire dataset
+        if self.use_feature_engineering and self.row_wise_transformations is not None:
+            X_train_pd = self.row_wise_transformations.apply_row_wise_transformations(
+                X_train_pd
+            )
+
+        with mlflow.start_run(
+            run_name=f"{self.run_name}_{self.model_type}"
+        ) as parent_run:
+            outer_cv_results.parent_run_id = parent_run.info.run_id
             for i, (train_idx, val_idx) in enumerate(
-                self.outer_cv.split(X_train, y_train)
+                self.outer_cv.split(X_train_pd, y_train_np)
             ):
-                X_train_outer, X_val_outer = X_train[train_idx], X_train[val_idx]
-                y_train_outer, y_val_outer = y_train[train_idx], y_train[val_idx]
+                X_train_outer = X_train_pd.iloc[train_idx]
+                X_val_outer = X_train_pd.iloc[val_idx]
+                y_train_outer = y_train_np[train_idx]
+                y_val_outer = y_train_np[val_idx]
 
                 with mlflow.start_run(nested=True, run_name=f"Outer_fold_{i+1}") as run:
                     parent_id = run.info.run_id
-                    callback_fn = self._mlflow_callback(
-                        outer_fold_run_id=parent_id,
-                        experiment_name=self.experiment_name,
+                    callback_fn = (
+                        self._mlflow_callback(
+                            outer_fold_run_id=parent_id,
+                            experiment_name=self.experiment_name,
+                        )
+                        if self.log_hyperparameter_trials
+                        else lambda study, trial: None
                     )
 
-                    # 1. Perform an initial tuning using 20 trials.
-                    init_params = self.init_hyperparameter_tuning(
-                        X_train_outer=X_train_outer, y_train_outer=y_train_outer
-                    )
+                    if self.use_ofe:
+                        self.logger.info(f"Fitting OpenFE on fold {i+1}")
+                        feature_list, ofe_object = self.open_fe_transformations.fit(
+                            X_train=X_train_outer,
+                            y_train=y_train_outer,
+                            task="classification",
+                            categorical_features=self.categorical_columns,
+                            feature_boosting=True,
+                            n_jobs=self.n_jobs,
+                        )
+                        X_train_outer, X_val_outer, mapping = (
+                            self.open_fe_transformations.apply_openfe_features(
+                                X_train=X_train_outer,
+                                X_val=X_val_outer,
+                                features=feature_list,
+                                n_jobs=self.n_jobs,
+                            )
+                        )
 
-                    # 2. Perform feature selection using RFECV
-                    selected_features = self.feature_selection(
+                        self._log_artifact(f"ofe_fold_{i}", ofe_object)
+                        self._log_artifact(f"ofe_feature_mapping_fold_{i}", mapping)
+
+                    # 1. Perform full hyperparamter tuning
+                    _, best_params = self._hyperparameter_tuning(
                         X_train_outer=X_train_outer,
                         y_train_outer=y_train_outer,
-                        init_params=init_params,
-                    )
-
-                    # 3. Perform full hyperparamter tuning
-                    _, best_params = self.hyperparameter_tuning(
-                        X_train_outer=X_train_outer,
-                        y_train_outer=y_train_outer,
-                        selected_features=selected_features,
                         callback_fn=callback_fn,
                     )
 
-                    # 4. Fit final model with best hyperparameters on the entire outer training fold
-                    final_model = self.fit_model(
+                    # 2. Fit final model with best hyperparameters on the entire outer training fold
+                    (
+                        final_model,
+                        selected_features,
+                        category_schema,
+                        column_transformer,
+                    ) = self._fit_final_model(
                         X_train_outer=X_train_outer,
                         y_train_outer=y_train_outer,
                         best_params=best_params,
-                        selected_features=selected_features,
                     )
 
-                    # 5. Evaluate final model on the outer validaiton fold and log final model to model registry
-                    outer_fold_log_loss = self.eval_validation_loss(
+                    # 3. Evaluate final model on the outer validaiton fold and log final model to model registry
+                    outer_fold_log_loss = self._eval_validation_loss(
                         X_val_outer=X_val_outer,
                         y_val_outer=y_val_outer,
                         selected_features=selected_features,
                         final_model=final_model,
+                        category_schema=category_schema,
+                        column_transformer=column_transformer,
                     )
-                    # 6. Log metrics and parameters to MLFlow
-                    self.append_and_log_metrics_and_params(
+                    # 4. Log metrics and parameters to MLFlow
+                    self._append_and_log_metrics_and_params(
                         outer_cv_results=outer_cv_results,
                         selected_features=selected_features,
                         outer_fold_log_loss=outer_fold_log_loss,
@@ -611,7 +761,7 @@ class ModelCVEvaluator:
 
 class ModelParamTuner(ModelCVEvaluator):
 
-    def setup_mlflow(self):
+    def _setup_mlflow(self):
         """
         Sets up tracking uri and experiment for MLFlow
 
@@ -657,7 +807,7 @@ class ModelParamTuner(ModelCVEvaluator):
         y_val: pl.DataFrame,
         best_params: dict,
         selected_features: np.ndarray,
-    ) -> XGBClassifier | LGBMClassifier:
+    ) -> LGBMClassifier:
         """Fit final model using best hyerparameters and selected features
 
         Args:
@@ -668,17 +818,11 @@ class ModelParamTuner(ModelCVEvaluator):
             best_params (dict): Best hyperparameters found in the outer fold
             selected_features (np.ndarray): Array of selected features from RFECV
         Returns:
-            XGBClassifier | LGBMClassifier: Trained final model
+            LGBMClassifier: Trained final model
         """
         self.logger.info("Fitting final model with best hyperparameters...")
-        final_model = self.fetch_model()
+        final_model = self._fetch_model()
         final_model.set_params(**best_params)
-        final_model.fit(
-            X=X_train[selected_features],
-            y=y_train,
-            eval_metric="binary_logloss",
-            eval_set=[(X_val[selected_features], y_val)],
-        )
 
         results = {}
 
@@ -693,24 +837,12 @@ class ModelParamTuner(ModelCVEvaluator):
                 eval_names=["train", "valid"],
                 eval_metric="binary_logloss",
                 callbacks=[lgb.record_evaluation(results)],
+                categorical_feature=(
+                    self.categorical_columns if self.categorical_columns else ""
+                ),
             )
             train_loss = results["train"]["binary_logloss"]
             valid_loss = results["valid"]["binary_logloss"]
-
-        elif self.model_type == xgboost_model_name:
-            final_model.fit(
-                X_train[selected_features],
-                y_train,
-                eval_set=[
-                    (X_train[selected_features], y_train),
-                    (X_val[selected_features], y_val),
-                ],
-                verbose=False,
-            )
-            results = final_model.evals_result()
-
-            train_loss = results["validation_0"]["logloss"]
-            valid_loss = results["validation_1"]["logloss"]
 
         if train_loss and valid_loss:
             self.plot_loss_curve(train_loss, valid_loss)
@@ -735,51 +867,38 @@ class ModelParamTuner(ModelCVEvaluator):
         )
 
         with mlflow.start_run(run_name=f"{self.run_name}_{self.model_type}") as run:
+
             parent_id = run.info.run_id
+            outer_cv_results.parent_run_id = parent_id
             callback_fn = self._mlflow_callback(
                 outer_fold_run_id=parent_id,
                 experiment_name=self.experiment_name,
             )
 
-            # 1. Perform an initial tuning using 20 trials
-            init_params = self.init_hyperparameter_tuning(
-                X_train_outer=X_train, y_train_outer=y_train
-            )
-
-            # 2. Perform feature selection using RFECV
-            selected_features = self.feature_selection(
+            # 1. Perform full hyperparamter tuning
+            study, best_params = self._hyperparameter_tuning(
                 X_train_outer=X_train,
                 y_train_outer=y_train,
-                init_params=init_params,
-            )
-
-            # 3. Perform full hyperparamter tuning
-            study, best_params = self.hyperparameter_tuning(
-                X_train_outer=X_train,
-                y_train_outer=y_train,
-                selected_features=selected_features,
                 callback_fn=callback_fn,
             )
 
-            # 4. Fit final model with best hyperparameters on the train set
-            final_model = self.fit_and_evaluate_model(
-                X_train=X_train,
-                y_train=y_train,
-                X_val=X_val,
-                y_val=y_val,
+            # 2. Fit final model with best hyperparameters on the entire outer training fold
+            final_model, selected_features, category_schema = self._fit_model(
+                X_train_outer=X_train,
+                y_train_outer=y_train,
                 best_params=best_params,
-                selected_features=selected_features,
             )
 
-            # 5. Evaluate final model on the outer validation fold and log final model to model registry
-            outer_fold_log_loss = self.eval_validation_loss(
+            # 3. Evaluate final model on the outer validation fold and log final model to model registry
+            outer_fold_log_loss = self._eval_validation_loss(
                 X_val_outer=X_val,
                 y_val_outer=y_val,
                 selected_features=selected_features,
                 final_model=final_model,
+                category_schema=category_schema,
             )
 
-            self.append_and_log_metrics_and_params(
+            self._append_and_log_metrics_and_params(
                 outer_cv_results=outer_cv_results,
                 selected_features=selected_features,
                 outer_fold_log_loss=outer_fold_log_loss,
