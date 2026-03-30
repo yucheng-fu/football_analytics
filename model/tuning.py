@@ -299,9 +299,14 @@ class ModelCVEvaluator:
         mlflow.log_metric("log_loss", outer_fold_log_loss)
         mlflow.log_params(best_params)
         if study is not None:
-            with open("optuna_study.pkl", "wb") as f:
-                pickle.dump(study, f)
-            mlflow.log_artifact("optuna_study.pkl")
+            with tempfile.TemporaryDirectory() as tmp_dir:
+                tmp_file_path = os.path.join(tmp_dir, "optuna_study.pkl")
+
+                with open(tmp_file_path, "wb") as f:
+                    pickle.dump(study, f)
+                mlflow.log_artifact(
+                    "optuna_study.pkl", artifact_path="pickles/optuna_study.pkl"
+                )
 
     def _mlflow_callback(
         self, outer_fold_run_id: str, experiment_name: str
