@@ -21,3 +21,4 @@ Thumbs.db
 
 # MLflow / experiment outputs
 02-analysis/mlruns/
+02-analysis/*.feather

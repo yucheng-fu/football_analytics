@@ -1,6 +1,6 @@
 import pandas as pd
 import numpy as np
-from utils.statics import PITCH_X
+from utils.statics import PITCH_X, PITCH_Y
 
 
 class RowWiseTransformations:
@@ -21,9 +21,10 @@ class RowWiseTransformations:
         df["end_distance_to_goal"] = np.sqrt(
             (df["end_x"] - PITCH_X) ** 2 + (df["end_y"] - 40) ** 2
         )
-
-        df["dx"] = df["end_x"] - df["start_x"]
-        df["dy"] = df["end_y"] - df["start_y"]
+        # Goal angle
+        goal_angle = np.arctan2(40 - df["start_y"], PITCH_X - df["start_x"])
+        df["direction_to_goal"] = df["angle"] - goal_angle
+        df["direction_to_goal_cos"] = np.cos(df["direction_to_goal"])
 
         # 2. Derived features
         df["progressive_distance"] = (
@@ -37,20 +38,11 @@ class RowWiseTransformations:
         df["angle_sin"] = np.sin(df["angle"])
         df["angle_cos"] = np.cos(df["angle"])
 
-        # 3. Log-transforms
-        df["log_length"] = np.log1p(df["length"])
-        df["log_duration"] = np.log1p(df["duration"])
-
         # 6. Drop original raw columns
-        drop_cols = [
-            "start_x",
-            "start_y",
-            "end_x",
-            "end_y",
-            "angle",
-            "duration",
-            "length",
-        ]
-        df = df.drop(columns=[c for c in drop_cols if c in df.columns])
+        # drop_cols = [
+        #     "angle",
+        #     "start_distance_to_goal",
+        # ]
+        # df = df.drop(columns=[c for c in drop_cols if c in df.columns])
 
         return df

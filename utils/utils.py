@@ -473,6 +473,7 @@ def compute_generalisation_error_from_run_id_and_experiment_id(
     mean = np.mean(loss)
     std = np.std(loss, ddof=1)
 
+    print(f"Number of outer folds: {len(loss)}")
     print(
         f"95% confidence interval for best estimate of generalisation: {mean} ± {1.96*std / np.sqrt(len(loss))}"
     )

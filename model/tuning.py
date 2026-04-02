@@ -68,8 +68,8 @@ class ModelCVEvaluator:
         self.run_name = run_name
         self.experiment_name = experiment_name
         self.log_hyperparameter_trials = log_hyperparameter_trials
-        self.log_parameter_importance = (log_parameter_importance,)
-        self.log_feature_importance = (log_feature_importance,)
+        self.log_parameter_importance = log_parameter_importance
+        self.log_feature_importance = log_feature_importance
         self.categorical_columns = (
             categorical_columns if categorical_columns is not None else []
         )
@@ -496,12 +496,16 @@ class ModelCVEvaluator:
         self, X_train: pd.DataFrame, model: LGBMClassifier
     ) -> plt.figure:
 
+        plt.ioff()
         # Create a figure explicitly
-        fig, ax = plt.subplots(figsize=(8, 6))
+        fig = plt.figure(figsize=(8, 6))
         explainer = shap.TreeExplainer(model=model)
         shap_values = explainer.shap_values(X_train)
 
-        shap.summary_plot(shap_values, X_train, plot_type="bar", show=False, ax=ax)
+        shap.summary_plot(shap_values, X_train, plot_type="bar", show=False)
+
+        plt.close(fig)
+        plt.ion()
 
         return fig
 
