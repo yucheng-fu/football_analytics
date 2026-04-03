@@ -681,7 +681,9 @@ class ModelCVEvaluator:
                 y_train_outer = y_train_np[train_idx]
                 y_val_outer = y_train_np[val_idx]
 
-                with mlflow.start_run(nested=True, run_name=f"Outer_fold_{i+1}") as run:
+                with mlflow.start_run(
+                    nested=True, run_name=f"Outer_fold_{i + 1}"
+                ) as run:
                     parent_id = run.info.run_id
                     callback_fn = (
                         self._mlflow_callback(
@@ -693,7 +695,7 @@ class ModelCVEvaluator:
                     )
 
                     if self.use_ofe:
-                        self.logger.info(f"Fitting OpenFE on fold {i+1}")
+                        self.logger.info(f"Fitting OpenFE on fold {i + 1}")
                         feature_list, ofe_object = self.open_fe_transformations.fit(
                             X_train=X_train_outer,
                             y_train=y_train_outer,

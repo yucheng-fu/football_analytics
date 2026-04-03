@@ -13,7 +13,6 @@ from model.nested_cv_eval import ModelCVEvaluator
 
 
 class ModelParamTuner(ModelCVEvaluator):
-
     def _setup_mlflow(self):
         """
         Sets up tracking uri and experiment for MLFlow
@@ -120,7 +119,6 @@ class ModelParamTuner(ModelCVEvaluator):
         )
 
         with mlflow.start_run(run_name=f"{self.run_name}_{self.model_type}") as run:
-
             parent_id = run.info.run_id
             outer_cv_results.parent_run_id = parent_id
             callback_fn = self._mlflow_callback(
