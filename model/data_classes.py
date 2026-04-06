@@ -17,7 +17,6 @@ class LGBMParams(BaseModel):
     bagging_freq: Optional[int] = 0
     colsample_bytree: Optional[float] = 1.0
     learning_rate: Optional[float] = 0.1
-    max_depth: Optional[int] = -1
     min_child_samples: Optional[int] = 20
     num_leaves: Optional[int] = 31
     n_estimators: Optional[int] = 100
