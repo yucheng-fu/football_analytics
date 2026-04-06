@@ -1,48 +1,59 @@
 import pandas as pd
 import numpy as np
-from utils.statics import PITCH_X, PITCH_Y
+from utils.statics import PITCH_X
 
 
 class RowWiseTransformations:
-    def __init__(self):
-        pass
+    def __init__(self, use_ofe_features: bool = False):
+        self.use_ofe_features = use_ofe_features
 
     def apply_row_wise_transformations(self, X: pd.DataFrame) -> pd.DataFrame:
-        # 0. Work on a copy to avoid SettingWithCopyWarnings
         df = X.copy()
 
-        # 1. Geometry / distance features
+        # Yards to meters
         df["length"] = df["length"] * 0.9144
 
-        # Calculate distances using NumPy for speed
+        # Compute log-velocity
+        velocity = df["length"] / df["duration"]
+        df["log_velocity"] = np.log1p(velocity.replace([np.inf, -np.inf], 0).fillna(0))
+
+        # Splitting angle into cos and sin
+        df["angle_sin"] = np.sin(df["angle"])
+        df["angle_cos"] = np.cos(df["angle"])
+
+        # Progressive distance
         df["start_distance_to_goal"] = np.sqrt(
             (df["start_x"] - PITCH_X) ** 2 + (df["start_y"] - 40) ** 2
         )
         df["end_distance_to_goal"] = np.sqrt(
             (df["end_x"] - PITCH_X) ** 2 + (df["end_y"] - 40) ** 2
         )
-        # Goal angle
-        goal_angle = np.arctan2(40 - df["start_y"], PITCH_X - df["start_x"])
-        df["direction_to_goal"] = df["angle"] - goal_angle
-        df["direction_to_goal_cos"] = np.cos(df["direction_to_goal"])
-
-        # 2. Derived features
         df["progressive_distance"] = (
             df["start_distance_to_goal"] - df["end_distance_to_goal"]
         )
 
-        # Velocity calculation with 0-division protection
-        velocity = df["length"] / df["duration"]
-        df["log_velocity"] = np.log1p(velocity.replace([np.inf, -np.inf], 0).fillna(0))
+        # Direction to goal
+        goal_angle = np.arctan2(40 - df["start_y"], PITCH_X - df["start_x"])
+        df["direction_to_goal"] = df["angle"] - goal_angle
+        df["direction_to_goal_cos"] = np.cos(df["direction_to_goal"])
 
-        df["angle_sin"] = np.sin(df["angle"])
-        df["angle_cos"] = np.cos(df["angle"])
+        # Interaction features
+        df["duration_x_under_pressure"] = (
+            df["duration"] * df["under_pressure"]
+        ).astype(float)
 
-        # 6. Drop original raw columns
-        # drop_cols = [
-        #     "angle",
-        #     "start_distance_to_goal",
-        # ]
-        # df = df.drop(columns=[c for c in drop_cols if c in df.columns])
+        df["log_velocity_x_under_pressure"] = (
+            df["log_velocity"] * df["under_pressure"]
+        ).astype(float)
+
+        df["length_x_under_pressure"] = (df["length"] * df["under_pressure"]).astype(
+            float
+        )
+
+        if self.use_ofe_features:
+            df["duration_div_log_velocity"] = df["duration"] / df[
+                "log_velocity"
+            ].replace(0, np.nan)
+            df["min_end_x_duration"] = np.minimum(df["end_x"], df["duration"])
 
         return df

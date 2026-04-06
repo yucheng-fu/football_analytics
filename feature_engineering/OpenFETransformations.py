@@ -1,8 +1,8 @@
 from typing import Tuple, List
 import pandas as pd
 import numpy as np
-from feature_engineering.utils import tree_to_formula, transform
-from feature_engineering.openfe import OpenFE
+from feature_engineering.OpenFE.utils import tree_to_formula, transform
+from feature_engineering.OpenFE.openfe import OpenFE
 
 
 class OpenFETransformations:
@@ -52,13 +52,10 @@ class OpenFETransformations:
             n_jobs=n_jobs,
         )
 
-        # 2. Identify the new columns created by OpenFE (e.g., 'auto_fe_1')
         generated_cols = [
             c for c in X_train_transformed.columns if c not in original_cols
         ]
 
-        # 3. Create the map: { 'auto_fe_1': '(Age + Fare)', ... }
-        # This allows you to look up what 'auto_fe_1' actually means later.
         mapping = {
             gen_col: tree_to_formula(f)
             for gen_col, f in zip(generated_cols, selected_features)

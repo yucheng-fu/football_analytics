@@ -4,6 +4,8 @@ from mlflow.entities import ViewType
 import matplotlib.pyplot as plt
 import mplsoccer as mpl
 import numpy as np
+import pandas as pd
+import shap
 from matplotlib.axes import Axes
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Ellipse, Patch
@@ -17,6 +19,7 @@ from mlflow.tracking import MlflowClient
 from model.data_classes import LGBMParams, OuterCVResults
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
+from feature_engineering.OpenFE.openfe import tree_to_formula
 
 
 from utils.statics import (
@@ -385,7 +388,7 @@ def plot_single_feature_distribution(
         bins (int | str, optional): Number of bins or binning strategy. Defaults to 30.
         kde (bool, optional): Whether to show KDE curve. Defaults to True.
     """
-    if type(bins) == str:
+    if type(bins) is str:
         bins = "auto"
         print("Bins is string type: defaulting to 'auto'")
 
@@ -528,3 +531,35 @@ def get_registered_model(
 
     trained_model = log_fn(model_uri=f"models:/{model_registry_name}/{version}")
     return trained_model
+
+
+def plot_feature_importance(X_train: pd.DataFrame, model: LGBMClassifier) -> plt.figure:
+
+    plt.ioff()
+    fig = plt.figure(figsize=(8, 6))
+    explainer = shap.TreeExplainer(model=model)
+    shap_values = explainer.shap_values(X_train)
+
+    shap.summary_plot(shap_values, X_train, plot_type="bar", show=False)
+
+    plt.close(fig)
+    plt.ion()
+
+    return fig
+
+
+def safe_production_transform(X_new, fitted_features_list):
+    # Do NOT concat with X_train here.
+    # The 'fitted_features_list' already knows the means/stats from training.
+    X_out = X_new.copy()
+
+    for i, feature in enumerate(fitted_features_list):
+        # Apply the pre-calculated logic to the new data
+        feature.calculate(X_out, is_root=True)
+
+        # Add to dataframe and CLEAN UP to prevent memory leaks
+        name = tree_to_formula(feature)
+        X_out[name] = feature.data.values.ravel()
+        feature.data = None
+
+    return X_out

@@ -11,6 +11,7 @@ from sklearn.metrics import log_loss
 import optuna
 import matplotlib.pyplot as plt
 from utils.statics import lightgbm_model_name, tracking_uri
+from utils.utils import plot_feature_importance
 import mlflow
 from mlflow.entities import Run
 from mlflow.models import infer_signature
@@ -43,6 +44,7 @@ class ModelCVEvaluator:
         n_inner_splits: int = 5,
         n_outer_splits: int = 10,
         n_trials: int = 20,
+        use_hyperparameter_tuning: bool = False,
         use_feature_selection: bool = False,
         use_feature_engineering: bool = False,
         use_ofe: bool = False,
@@ -53,6 +55,7 @@ class ModelCVEvaluator:
         log_feature_importance: bool = False,
         categorical_columns: list[str] | None = None,
         ohe_columns: list[str] | None = None,
+        use_ofe_features: bool = False,
     ):
         self.model_type = model_type
         self.row_wise_transformations = row_wise_transformations
@@ -60,6 +63,7 @@ class ModelCVEvaluator:
         self.n_inner_splits = n_inner_splits
         self.n_outer_splits = n_outer_splits
         self.n_trials = n_trials
+        self.use_hyperparameter_tuning = use_hyperparameter_tuning
         self.use_feature_selection = use_feature_selection
         self.use_feature_engineering = use_feature_engineering
         self.use_ofe = use_ofe
@@ -72,6 +76,7 @@ class ModelCVEvaluator:
             categorical_columns if categorical_columns is not None else []
         )
         self.ohe_columns = ohe_columns if ohe_columns is not None else []
+        self.use_ofe_features = use_ofe_features
         self.feature_transformer_config = {
             "ohe_columns": self.ohe_columns,
             "cat_columns": self.categorical_columns,
@@ -112,7 +117,9 @@ class ModelCVEvaluator:
         return X_pd_copy
 
     def _build_column_transformer(self) -> ColumnTransformer:
-        return ColumnTransformer(**self.feature_transformer_config)
+        return ColumnTransformer(
+            **self.feature_transformer_config, use_ofe_features=self.use_ofe_features
+        )
 
     def _setup_mlflow(self) -> None:
         """
@@ -167,19 +174,13 @@ class ModelCVEvaluator:
             ValueError: If self.model_type is not one of the supported model names.
         """
         if self.model_type == lightgbm_model_name:
-            max_depth = trial.suggest_int("max_depth", 3, 100)
-            max_num_leaves = min(
-                2**max_depth - 1, 512
-            )  # less than 2^(max_depth), cap at 512
-            num_leaves = trial.suggest_int("num_leaves", 7, max_num_leaves)
-
-            # Model paramteres
             params = {
                 "n_estimators": trial.suggest_int(
                     "n_estimators", 100, 1000
                 ),  # number of trees
-                "max_depth": max_depth,  # maximum depth of each tree
-                "num_leaves": num_leaves,  # number of leaves in one tree
+                "num_leaves": trial.suggest_int(
+                    "num_leaves", 16, 256
+                ),  # number of leaves in one tree
                 "learning_rate": trial.suggest_float(
                     "learning_rate", 0.01, 0.2
                 ),  # step size for optimisation
@@ -189,17 +190,11 @@ class ModelCVEvaluator:
                 "colsample_bytree": trial.suggest_float(
                     "colsample_bytree", 0.5, 1.0
                 ),  # fraction of features used per tree
-                "min_child_samples": trial.suggest_int(
-                    "min_child_samples", 20, 100
-                ),  # smallest number of data points a leaf can have
-                "bagging_freq": trial.suggest_int(
-                    "bagging_freq", 0, 10
-                ),  # bagging frequency
                 "reg_alpha": trial.suggest_float(
-                    "reg_alpha", 0.0, 1.0
+                    "reg_alpha", 1e-4, 0.1, log=True
                 ),  # L1 regularisation
                 "reg_lambda": trial.suggest_float(
-                    "reg_lambda", 0.0, 1.0
+                    "reg_lambda", 1e-4, 0.3, log=True
                 ),  # L2 regularisation
                 "metric": "binary_logloss",  # evaluation metric
                 "random_state": 165,  # seed for reproducibility
@@ -409,7 +404,7 @@ class ModelCVEvaluator:
         params: dict,
         X_val: Optional[pd.DataFrame] = None,
     ) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
-        if self.use_feature_selection == False:
+        if not self.use_feature_selection:
             selected_features = X_train.columns.to_list()
             return (X_train, X_val, selected_features)
 
@@ -496,23 +491,6 @@ class ModelCVEvaluator:
 
         return mean_score
 
-    def _plot_feature_importance(
-        self, X_train: pd.DataFrame, model: LGBMClassifier
-    ) -> plt.figure:
-
-        plt.ioff()
-        # Create a figure explicitly
-        fig = plt.figure(figsize=(8, 6))
-        explainer = shap.TreeExplainer(model=model)
-        shap_values = explainer.shap_values(X_train)
-
-        shap.summary_plot(shap_values, X_train, plot_type="bar", show=False)
-
-        plt.close(fig)
-        plt.ion()
-
-        return fig
-
     def _hyperparameter_tuning(
         self,
         X_train_outer: pd.DataFrame,
@@ -530,6 +508,10 @@ class ModelCVEvaluator:
             Tuple[optuna.study.Study, dict]: Optuna study object and dictionary of best hyperparameters
         """
         self.logger.info("Starting full hyperparameter tuning...")
+
+        if not self.use_hyperparameter_tuning:
+            return (None, {})
+
         sampler = optuna.samplers.TPESampler(seed=self.seed)
         study = optuna.create_study(direction="minimize", sampler=sampler)
 
@@ -639,7 +621,7 @@ class ModelCVEvaluator:
         )
 
         if self.log_feature_importance:
-            fig = self._plot_feature_importance(
+            fig = plot_feature_importance(
                 X_train=X_train_outer_pd[selected_features], model=final_model
             )
             self._log_figure(name="feature_importance", fig=fig)
@@ -694,7 +676,7 @@ class ModelCVEvaluator:
                         else lambda study, trial: None
                     )
 
-                    if self.use_ofe:
+                    if self.use_ofe and self.open_fe_transformations is not None:
                         self.logger.info(f"Fitting OpenFE on fold {i + 1}")
                         feature_list, ofe_object = self.open_fe_transformations.fit(
                             X_train=X_train_outer,
@@ -715,6 +697,11 @@ class ModelCVEvaluator:
 
                         self._log_artifact(f"ofe_fold_{i}", ofe_object)
                         self._log_artifact(f"ofe_feature_mapping_fold_{i}", mapping)
+
+                        for feat_name, formula in mapping.items():
+                            self.logger.info(
+                                f"Feature: {feat_name:20} | Formula: {formula}"
+                            )
 
                     # 1. Perform full hyperparamter tuning
                     _, best_params = self._hyperparameter_tuning(
