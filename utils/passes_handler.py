@@ -22,9 +22,7 @@ class PassesHandler:
             passes = self.fetch_passes_from_match(match_id=match_id)
 
             start_x, start_y = self.parse_pass_location(passes, col_name="location")
-            end_x, end_y = self.parse_pass_location(
-                passes, col_name="pass_end_location"
-            )
+            end_x, end_y = self.parse_pass_location(passes, col_name="pass_end_location")
             length = self.parse_pass_length(passes)
             height = self.parse_pass_height(passes)
             angle = self.parse_pass_angle(passes)
@@ -91,9 +89,7 @@ class PassesHandler:
         passes = events.filter(pl.col("type") == "Pass")
         return passes
 
-    def parse_pass_location(
-        self, passes: pl.DataFrame, col_name: str
-    ) -> Tuple[np.ndarray, np.ndarray]:
+    def parse_pass_location(self, passes: pl.DataFrame, col_name: str) -> Tuple[np.ndarray, np.ndarray]:
         """Parsing the location of the pass
 
         Args:
@@ -103,9 +99,7 @@ class PassesHandler:
         Returns:
             Tuple[np.ndarray, np.ndarray]: x and y coordinates of the pass location
         """
-        return np.array(
-            passes.select(pl.col(col_name)).to_series().to_list()
-        ).transpose()
+        return np.array(passes.select(pl.col(col_name)).to_series().to_list()).transpose()
 
     def parse_pass_length(self, passes: pl.DataFrame) -> list[float]:
         """Parsing length of the pass

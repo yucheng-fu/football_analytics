@@ -28,12 +28,8 @@ class GMMHandler:
         Returns:
             np.ndarray: A 2D array containing the x and y coordinates of the filtered events.
         """
-        pass_x2, pass_y2 = self.get_x_y_event_locations(
-            self.passes, event_type="pass", invert=self.invert_coords
-        )
-        carry_x2, carry_y2 = self.get_x_y_event_locations(
-            self.carries, event_type="carry", invert=self.invert_coords
-        )
+        pass_x2, pass_y2 = self.get_x_y_event_locations(self.passes, event_type="pass", invert=self.invert_coords)
+        carry_x2, carry_y2 = self.get_x_y_event_locations(self.carries, event_type="carry", invert=self.invert_coords)
         dribble_x2, dribble_y2 = self.get_x_y_event_locations(
             self.dribbles, event_type="dribble", invert=self.invert_coords
         )
@@ -61,54 +57,40 @@ class GMMHandler:
             np.ndarray: A 2D array containing the x and y coordinates of the filtered events.
         """
         if event_type == "dribble":
-            team_events_coords = team_events.filter(
-                (pl.col("location").is_not_null())
-            ).select(["location"])
+            team_events_coords = team_events.filter((pl.col("location").is_not_null())).select(["location"])
             dribble_x, dribble_y = np.array(team_events_coords["location"].to_list()).T
 
             if invert:
-                dribble_x, dribble_y = invert_orientation(
-                    dribble_x, dribble_y, PITCH_X, PITCH_Y
-                )
+                dribble_x, dribble_y = invert_orientation(dribble_x, dribble_y, PITCH_X, PITCH_Y)
                 return (dribble_x, dribble_y)
 
             return (dribble_x, dribble_y)
 
         elif event_type == "carry":
             carry_coords = team_events.filter(
-                (pl.col("location").is_not_null())
-                & (pl.col("carry_end_location").is_not_null())
+                (pl.col("location").is_not_null()) & (pl.col("carry_end_location").is_not_null())
             ).select(["location", "carry_end_location"])
-            carry_x2, carry_y2 = np.array(
-                carry_coords["carry_end_location"].to_list()
-            ).T
+            carry_x2, carry_y2 = np.array(carry_coords["carry_end_location"].to_list()).T
 
             if invert:
-                carry_x2, carry_y2 = invert_orientation(
-                    carry_x2, carry_y2, PITCH_X, PITCH_Y
-                )
+                carry_x2, carry_y2 = invert_orientation(carry_x2, carry_y2, PITCH_X, PITCH_Y)
                 return (carry_x2, carry_y2)
 
             return (carry_x2, carry_y2)
 
         elif event_type == "pass":
             pass_coords = team_events.filter(
-                (pl.col("location").is_not_null())
-                & (pl.col("pass_end_location").is_not_null())
+                (pl.col("location").is_not_null()) & (pl.col("pass_end_location").is_not_null())
             ).select(["location", "pass_end_location"])
             pass_x2, pass_y2 = np.array(pass_coords["pass_end_location"].to_list()).T
 
             if invert:
-                pass_x2, pass_y2 = invert_orientation(
-                    pass_x2, pass_y2, PITCH_X, PITCH_Y
-                )
+                pass_x2, pass_y2 = invert_orientation(pass_x2, pass_y2, PITCH_X, PITCH_Y)
                 return (pass_x2, pass_y2)
 
             return (pass_x2, pass_y2)
         else:
-            raise ValueError(
-                "Invalid event type. Please choose from 'dribble', 'carry', or 'pass'."
-            )
+            raise ValueError("Invalid event type. Please choose from 'dribble', 'carry', or 'pass'.")
 
     def get_pass_events(self, team_events: pl.DataFrame) -> pl.DataFrame:
         """
@@ -147,9 +129,9 @@ class GMMHandler:
         pl.DataFrame: A DataFrame containing only dribble events.
         """
 
-        return team_events.filter(
-            (pl.col("type") == "Dribble") & (pl.col("dribble_outcome") == "Complete")
-        ).select("location", "dribble_outcome")
+        return team_events.filter((pl.col("type") == "Dribble") & (pl.col("dribble_outcome") == "Complete")).select(
+            "location", "dribble_outcome"
+        )
 
     def get_optimal_number_of_components_using_bic(
         self, features: pl.DataFrame, max_components: int = 50, random_state: int = 42
@@ -175,9 +157,7 @@ class GMMHandler:
         self.optimal_n_components = n_components_range[bic.index(min(bic))]
         return self.optimal_n_components
 
-    def fit_gmm(
-        self, features: pl.DataFrame, random_state: int = 42
-    ) -> GaussianMixture:
+    def fit_gmm(self, features: pl.DataFrame, random_state: int = 42) -> GaussianMixture:
         """Fit GMM model
 
         Args:

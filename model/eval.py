@@ -20,9 +20,7 @@ import matplotlib.pyplot as plt
 
 class ModelEval:
     logger = logging.getLogger(__name__)
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
     def __init__(
         self,
@@ -46,9 +44,7 @@ class ModelEval:
         """
         Sets up tracking uri and experiment for MLFlow
         """
-        self.logger.info(
-            f"""Starting evaluation for {self.model_type} with the following configuration: """
-        )
+        self.logger.info(f"""Starting evaluation for {self.model_type} with the following configuration: """)
 
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment_name=self.experiment_name)
@@ -119,9 +115,7 @@ class ModelEval:
 
             # Metrics
             roc_auc, fpr, tpr, _ = self.compute_roc_curve(y_test, y_probs)
-            train_roc_auc, train_fpr, train_tpr, _ = self.compute_roc_curve(
-                y_train, y_train_probs
-            )
+            train_roc_auc, train_fpr, train_tpr, _ = self.compute_roc_curve(y_train, y_train_probs)
             acc = self.compute_accuracy(y_test, y_pred)
             precision = self.compute_precision(y_test, y_pred)
             recall = self.compute_recall(y_test, y_pred)
@@ -142,9 +136,7 @@ class ModelEval:
 
             # Plot ROC
             fig, ax = plt.subplots(figsize=(6, 6))
-            self.plot_auc_roc(
-                ax, roc_auc, fpr, tpr, train_roc_auc, train_fpr, train_tpr
-            )
+            self.plot_auc_roc(ax, roc_auc, fpr, tpr, train_roc_auc, train_fpr, train_tpr)
             mlflow.log_figure(fig, "roc_curve.png")
             plt.close(fig)
 

@@ -89,9 +89,7 @@ class ModelParamTuner(ModelCVEvaluator):
                 eval_names=["train", "valid"],
                 eval_metric="binary_logloss",
                 callbacks=[lgb.record_evaluation(results)],
-                categorical_feature=(
-                    self.categorical_columns if self.categorical_columns else ""
-                ),
+                categorical_feature=(self.categorical_columns if self.categorical_columns else ""),
             )
             train_loss = results["train"]["binary_logloss"]
             valid_loss = results["valid"]["binary_logloss"]
@@ -114,9 +112,7 @@ class ModelParamTuner(ModelCVEvaluator):
         outer_cv_results = OuterCVResults()
         self.setup_mlflow()
 
-        X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=0.2, stratify=y, random_state=42
-        )
+        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
 
         with mlflow.start_run(run_name=f"{self.run_name}_{self.model_type}") as run:
             parent_id = run.info.run_id

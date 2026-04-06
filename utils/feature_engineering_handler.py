@@ -14,9 +14,7 @@ class FeatureEngineeringHandler:
 
         for col in columns:
             # replace spaces in category values with underscores before dummification
-            self.X = self.X.with_columns(
-                pl.col(col).cast(pl.Utf8).str.replace_all(" ", "_").alias(col)
-            )
+            self.X = self.X.with_columns(pl.col(col).cast(pl.Utf8).str.replace_all(" ", "_").alias(col))
             dummies = self.X.select(pl.col(col)).to_dummies()
             self.X = self.X.hstack(dummies).drop(pl.col(col))
 
@@ -96,9 +94,7 @@ class FeatureEngineeringHandler:
         """
         # The  goal is at (120, 40)
         self.X = self.X.with_columns(
-            (
-                ((pl.col("start_x") - 120) ** 2 + (pl.col("start_y") - 40) ** 2).sqrt()
-            ).alias("start_distance_to_goal")
+            (((pl.col("start_x") - 120) ** 2 + (pl.col("start_y") - 40) ** 2).sqrt()).alias("start_distance_to_goal")
         )
         return self.X
 
@@ -110,9 +106,7 @@ class FeatureEngineeringHandler:
         """
         # The  goal is at (120, 40)
         self.X = self.X.with_columns(
-            (((pl.col("end_x") - 120) ** 2 + (pl.col("end_y") - 40) ** 2).sqrt()).alias(
-                "end_distance_to_goal"
-            )
+            (((pl.col("end_x") - 120) ** 2 + (pl.col("end_y") - 40) ** 2).sqrt()).alias("end_distance_to_goal")
         )
         return self.X
 
@@ -123,9 +117,7 @@ class FeatureEngineeringHandler:
             pl.DataFrame: _description_
         """
         self.X = self.X.with_columns(
-            (pl.col("start_distance_to_goal") - pl.col("end_distance_to_goal")).alias(
-                "progressive_distance"
-            )
+            (pl.col("start_distance_to_goal") - pl.col("end_distance_to_goal")).alias("progressive_distance")
         )
         return self.X
 

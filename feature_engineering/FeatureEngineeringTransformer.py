@@ -23,12 +23,8 @@ class ColumnTransformer(BaseEstimator, TransformerMixin):
         self.duration_freq_map_ = None
 
     def fit(self, X: pd.DataFrame, y=None):
-        self.height_velocity_groupby_mean_map_ = X.groupby("height")[
-            "log_velocity"
-        ].mean()
-        self.body_part_velocity_groupby_mean_map_ = X.groupby("body_part")[
-            "log_velocity"
-        ].mean()
+        self.height_velocity_groupby_mean_map_ = X.groupby("height")["log_velocity"].mean()
+        self.body_part_velocity_groupby_mean_map_ = X.groupby("body_part")["log_velocity"].mean()
         self.height_freq_map_ = X["height"].value_counts()
         self.end_x_freq_map_ = X["end_x"].value_counts()
 
@@ -44,13 +40,9 @@ class ColumnTransformer(BaseEstimator, TransformerMixin):
         df = X.copy()
 
         # Group by height then mean log_velocity
-        df["height_mean_log_velocity"] = (
-            df["height"].map(self.height_velocity_groupby_mean_map_).astype(float)
-        )
+        df["height_mean_log_velocity"] = df["height"].map(self.height_velocity_groupby_mean_map_).astype(float)
         # Group by height then mean log_velocity
-        df["height_mean_log_velocity"] = (
-            df["body_part"].map(self.body_part_velocity_groupby_mean_map_).astype(float)
-        )
+        df["height_mean_log_velocity"] = df["body_part"].map(self.body_part_velocity_groupby_mean_map_).astype(float)
 
         # Value counts for height
         df["freq_height"] = df["height"].map(self.height_freq_map_).astype(float)
@@ -59,9 +51,7 @@ class ColumnTransformer(BaseEstimator, TransformerMixin):
         df["freq_end_x"] = df["end_x"].map(self.end_x_freq_map_).astype(float)
 
         if self.use_ofe_features:
-            df["freq_duration"] = (
-                df["duration"].map(self.duration_freq_map_).astype(float)
-            )
+            df["freq_duration"] = df["duration"].map(self.duration_freq_map_).astype(float)
 
         # 1. Categorical handling (Native pandas categories)
         for col in self.cat_columns:

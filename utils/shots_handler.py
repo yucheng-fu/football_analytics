@@ -40,18 +40,14 @@ class ShotsHandler:
         """
         return self.extract_x_y_location_from_events(self.team_non_goals)
 
-    def extract_x_y_location_from_events(
-        self, team_events: pl.DataFrame
-    ) -> tuple[float, float]:
+    def extract_x_y_location_from_events(self, team_events: pl.DataFrame) -> tuple[float, float]:
         """Extract x and y location from events DataFrame.
 
         Args:
             team_events (pl.DataFrame): Events DataFrame for a specific team
         """
 
-        x, y = np.array(
-            team_events.select(pl.col("location")).to_series().to_list()
-        ).transpose()
+        x, y = np.array(team_events.select(pl.col("location")).to_series().to_list()).transpose()
 
         return (x, y)
 

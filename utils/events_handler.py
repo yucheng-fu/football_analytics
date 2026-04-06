@@ -16,9 +16,7 @@ class EventsHandler:
         Args:
             team_name (str): Name of the team
         """
-        return self.events.filter(
-            (pl.col("location").is_not_null()) & (pl.col("team") == team_name)
-        )
+        return self.events.filter((pl.col("location").is_not_null()) & (pl.col("team") == team_name))
 
     def extract_x_y_location_from_events(self, team_name: str) -> Tuple[float, float]:
         """Extract x and y location from events DataFrame.
@@ -28,9 +26,7 @@ class EventsHandler:
         """
         team_events = self.compute_team_events(team_name)
 
-        x, y = np.array(
-            team_events.select(pl.col("location")).to_series().to_list()
-        ).transpose()
+        x, y = np.array(team_events.select(pl.col("location")).to_series().to_list()).transpose()
 
         return (x, y)
 
@@ -45,18 +41,10 @@ class EventsHandler:
         """
         starting_xi = self.get_starting_xi_from_events_df()
         team_starting_xi = (
-            (
-                starting_xi.filter(pl.col("team") == team_name).select(
-                    pl.col("player_id")
-                )
-            )
-            .to_series()
-            .to_list()
+            (starting_xi.filter(pl.col("team") == team_name).select(pl.col("player_id"))).to_series().to_list()
         )
 
-        team_11_events = self.compute_team_events(team_name).filter(
-            pl.col("player_id").is_in(team_starting_xi)
-        )
+        team_11_events = self.compute_team_events(team_name).filter(pl.col("player_id").is_in(team_starting_xi))
 
         return (
             team_11_events.select(
@@ -74,9 +62,7 @@ class EventsHandler:
         Returns:
             pl.DataFrame: DataFrame containing the starting XI players
         """
-        tactics = self.events.filter(pl.col("type") == "Starting XI").select(
-            pl.col("tactics")
-        )
+        tactics = self.events.filter(pl.col("type") == "Starting XI").select(pl.col("tactics"))
 
         starting_xi = self.extract_team_from_match_tactics(tactics)
         return starting_xi
@@ -91,24 +77,14 @@ class EventsHandler:
             pl.DataFrame: DataFrame containing the team player information for both teams
         """
         players_df = (
-            tactics.with_columns(
-                pl.col("tactics").struct.field("lineup").alias("lineup")
-            )
+            tactics.with_columns(pl.col("tactics").struct.field("lineup").alias("lineup"))
             .with_row_count("team_idx")  # 0 for first team, 1 for second team
             .explode("lineup")
             .select(
                 [
-                    pl.col("lineup")
-                    .struct.field("jersey_number")
-                    .alias("jersey_number"),
-                    pl.col("lineup")
-                    .struct.field("player")
-                    .struct.field("id")
-                    .alias("player_id"),
-                    pl.col("lineup")
-                    .struct.field("player")
-                    .struct.field("name")
-                    .alias("player_name"),
+                    pl.col("lineup").struct.field("jersey_number").alias("jersey_number"),
+                    pl.col("lineup").struct.field("player").struct.field("id").alias("player_id"),
+                    pl.col("lineup").struct.field("player").struct.field("name").alias("player_name"),
                     pl.col("team_idx"),
                 ]
             )

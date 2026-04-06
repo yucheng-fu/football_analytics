@@ -12,9 +12,7 @@ import numpy as np
 
 class ModelTrainer:
     logger = logging.getLogger(__name__)
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
     def __init__(
         self,
@@ -47,9 +45,7 @@ class ModelTrainer:
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment_name=self.experiment_name)
 
-    def set_params(
-        self, model: XGBClassifier | LGBMClassifier
-    ) -> XGBClassifier | LGBMClassifier:
+    def set_params(self, model: XGBClassifier | LGBMClassifier) -> XGBClassifier | LGBMClassifier:
         """Set params for selected model type
 
         Args:
@@ -62,16 +58,10 @@ class ModelTrainer:
             XGBClassifier | LGBMClassifier: Model
         """
         accepted_params = set(model.get_params().keys())
-        valid_params = {
-            k: v for k, v in self.best_params.items() if k in accepted_params
-        }
-        invalid_params = [
-            k for k in self.best_params.keys() if k not in accepted_params
-        ]
+        valid_params = {k: v for k, v in self.best_params.items() if k in accepted_params}
+        invalid_params = [k for k in self.best_params.keys() if k not in accepted_params]
         if invalid_params:
-            raise ValueError(
-                f"Invalid parameter(s) for {type(model).__name__}: {', '.join(invalid_params)}"
-            )
+            raise ValueError(f"Invalid parameter(s) for {type(model).__name__}: {', '.join(invalid_params)}")
         else:
             model.set_params(**valid_params)
             return model

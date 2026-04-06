@@ -54,9 +54,7 @@ def get_grid_cell(x, y):
 def get_events():
     comps = sb.competitions()
     comps = comps[comps["country_name"] == "Spain"]
-    matches = sb.matches(competition_id=11, season_id=90).sort_values(
-        "match_date", ascending=False
-    )
+    matches = sb.matches(competition_id=11, season_id=90).sort_values("match_date", ascending=False)
     matches = matches[(matches["home_team"] == "Barcelona")]
 
     all_match_ids = matches.match_id.to_list()[:15]
@@ -93,12 +91,7 @@ def process_movements():
             end_x, end_y = end
             sx, sy = get_grid_cell(start_x, start_y)
             ex, ey = get_grid_cell(end_x, end_y)
-            if (
-                0 <= sx < GRID_X
-                and 0 <= sy < GRID_Y
-                and 0 <= ex < GRID_X
-                and 0 <= ey < GRID_Y
-            ):
+            if 0 <= sx < GRID_X and 0 <= sy < GRID_Y and 0 <= ex < GRID_X and 0 <= ey < GRID_Y:
                 T[sx, sy, ex, ey] += 1
                 M[sx, sy] += 1
         except:

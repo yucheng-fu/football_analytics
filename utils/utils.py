@@ -59,9 +59,7 @@ def build_cmap(x: Tuple[int, int, int], y: Tuple[int, int, int]) -> ListedColorm
     return ListedColormap(newcolors)
 
 
-def invert_orientation(
-    x: np.array, y: np.array, PITCH_X: int, PITCH_Y: int
-) -> Tuple[np.array, np.array]:
+def invert_orientation(x: np.array, y: np.array, PITCH_X: int, PITCH_Y: int) -> Tuple[np.array, np.array]:
     """Invert the orientation of the pitch coordinates.
 
     Args:
@@ -120,8 +118,7 @@ def add_legend(
         ]
     else:
         legend_elements = [
-            Patch(facecolor=colors[i], edgecolor="black", alpha=0.5, label=labels[i])
-            for i in range(num_elements)
+            Patch(facecolor=colors[i], edgecolor="black", alpha=0.5, label=labels[i]) for i in range(num_elements)
         ]
     ax.legend(handles=legend_elements, loc="upper right")
 
@@ -138,9 +135,7 @@ def plot_player_positions(
     fig_name: str,
 ) -> None:
     # Plot player positions
-    pitch.scatter(
-        x, y, s=300, c=color, edgecolors="black", linewidth=1.5, ax=ax, zorder=3
-    )
+    pitch.scatter(x, y, s=300, c=color, edgecolors="black", linewidth=1.5, ax=ax, zorder=3)
 
     # Add jersey numbers and player names
     for xi, yi, num, name in zip(x, y, jerseys, names):
@@ -224,9 +219,7 @@ def plot_pitch_with_shots(
     plt.show()
 
 
-def plot_gmm_components(
-    gmm: GaussianMixture, ax: Axes, color: str, fig_name: str
-) -> None:
+def plot_gmm_components(gmm: GaussianMixture, ax: Axes, color: str, fig_name: str) -> None:
     """Plot GMM components as ellipses on the pitch.
 
     Args:
@@ -277,17 +270,13 @@ def evaluate_and_plot_gmm_pdf(
 
     grid_points = np.column_stack([xx.ravel(), yy.ravel()])
 
-    for i, (mean, covariance, weight) in enumerate(
-        zip(gmm.means_, gmm.covariances_, gmm.weights_)
-    ):
+    for i, (mean, covariance, weight) in enumerate(zip(gmm.means_, gmm.covariances_, gmm.weights_)):
         pdf_values = multivariate_normal.pdf(grid_points, mean=mean, cov=covariance)
         density_components[:, :, i] = weight * pdf_values.reshape(xx.shape)
 
     total_density = density_components.sum(axis=-1)
 
-    ax.contourf(
-        xx, yy, total_density, levels=10, cmap=cmap, alpha=0.8, antialiased=True
-    )
+    ax.contourf(xx, yy, total_density, levels=10, cmap=cmap, alpha=0.8, antialiased=True)
     plt.title("GMM Probability Density Function (PDF) for possession-related events")
     plt.savefig(fig_name, dpi=300, bbox_inches="tight")
     plt.show()
@@ -302,13 +291,9 @@ def split_train_test(passes_df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFram
     Returns:
         tuple[pl.DataFrame, pl.DataFrame]: Train and test DataFrames
     """
-    train_df = passes_df.filter(pl.col("match_id") != france_argentina_match_id).drop(
-        pl.col("match_id")
-    )
+    train_df = passes_df.filter(pl.col("match_id") != france_argentina_match_id).drop(pl.col("match_id"))
 
-    test_df = passes_df.filter(pl.col("match_id") == france_argentina_match_id).drop(
-        pl.col("match_id")
-    )
+    test_df = passes_df.filter(pl.col("match_id") == france_argentina_match_id).drop(pl.col("match_id"))
 
     return train_df, test_df
 
@@ -341,18 +326,14 @@ def plot_numerical_feature_distributions(
     ax = ax.ravel()
 
     for i, column in enumerate(numerical_cols):
-        sns.histplot(
-            train_df.select(column).to_series(), bins="auto", kde=True, ax=ax[i]
-        )
+        sns.histplot(train_df.select(column).to_series(), bins="auto", kde=True, ax=ax[i])
         ax[i].set_title(f"Distribution of {column}")
         ax[i].set_xlabel(column)
         ax[i].set_ylabel("Frequency")
     plt.show()
 
 
-def plot_categorical_feature_distributions(
-    train_df: pl.DataFrame, categorical_cols: List[str]
-) -> None:
+def plot_categorical_feature_distributions(train_df: pl.DataFrame, categorical_cols: List[str]) -> None:
     """Plot categorical feature distributions
 
     Args:
@@ -377,9 +358,7 @@ def plot_categorical_feature_distributions(
     plt.show()
 
 
-def plot_single_feature_distribution(
-    train_df: pl.DataFrame, col: str, bins: int | str = 30, kde: bool = True
-) -> None:
+def plot_single_feature_distribution(train_df: pl.DataFrame, col: str, bins: int | str = 30, kde: bool = True) -> None:
     """Plot single feature distribution plot
 
     Args:
@@ -408,9 +387,7 @@ def plot_mutual_information(
         y_train (pl.DataFrame): Training labels
         discrete_features (List[bool] | str, optional): How to handle discrete features. Defaults to "auto".
     """
-    mi = mutual_info_classif(
-        X_train, y_train, discrete_features=discrete_features, random_state=165
-    )
+    mi = mutual_info_classif(X_train, y_train, discrete_features=discrete_features, random_state=165)
 
     mi_df = pl.DataFrame({"Feature": X_train.columns, "Mutual Information": mi})
     mi_df = mi_df.sort(by="Mutual Information", descending=True)
@@ -424,9 +401,7 @@ def plot_mutual_information(
     plt.show()
 
 
-def get_parent_run_id_from_experiment(
-    result: OuterCVResults | None, experiment_id: str
-) -> str:
+def get_parent_run_id_from_experiment(result: OuterCVResults | None, experiment_id: str) -> str:
     """Get parent run ID from experiment
 
     Args:
@@ -447,16 +422,12 @@ def get_parent_run_id_from_experiment(
             order_by=["attributes.start_time DESC"],
         )
 
-        parent_run_id = next(
-            run.info.run_id for run in runs if "mlflow.parentRunId" not in run.data.tags
-        )
+        parent_run_id = next(run.info.run_id for run in runs if "mlflow.parentRunId" not in run.data.tags)
 
     return parent_run_id
 
 
-def compute_generalisation_error_from_run_id_and_experiment_id(
-    parent_run_id: str, experiment_id: str
-) -> None:
+def compute_generalisation_error_from_run_id_and_experiment_id(parent_run_id: str, experiment_id: str) -> None:
     """Compute generalisation error from runs
 
     Args:
@@ -477,9 +448,7 @@ def compute_generalisation_error_from_run_id_and_experiment_id(
     std = np.std(loss, ddof=1)
 
     print(f"Number of outer folds: {len(loss)}")
-    print(
-        f"95% confidence interval for best estimate of generalisation: {mean} ± {1.96 * std / np.sqrt(len(loss))}"
-    )
+    print(f"95% confidence interval for best estimate of generalisation: {mean} ± {1.96 * std / np.sqrt(len(loss))}")
 
 
 def get_best_params_and_features_from_parent_run_id(

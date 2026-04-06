@@ -32,9 +32,7 @@ from feature_engineering.OpenFETransformations import OpenFETransformations
 
 class ModelCVEvaluator:
     logger = logging.getLogger(__name__)
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
     def __init__(
         self,
@@ -72,9 +70,7 @@ class ModelCVEvaluator:
         self.log_hyperparameter_trials = log_hyperparameter_trials
         self.log_parameter_importance = log_parameter_importance
         self.log_feature_importance = log_feature_importance
-        self.categorical_columns = (
-            categorical_columns if categorical_columns is not None else []
-        )
+        self.categorical_columns = categorical_columns if categorical_columns is not None else []
         self.ohe_columns = ohe_columns if ohe_columns is not None else []
         self.use_ofe_features = use_ofe_features
         self.feature_transformer_config = {
@@ -83,12 +79,8 @@ class ModelCVEvaluator:
         }
         self.seed = 165
         self.n_jobs = os.cpu_count() or 1
-        self.inner_cv = StratifiedKFold(
-            n_splits=self.n_inner_splits, shuffle=True, random_state=self.seed
-        )
-        self.outer_cv = StratifiedKFold(
-            n_splits=self.n_outer_splits, shuffle=True, random_state=self.seed
-        )
+        self.inner_cv = StratifiedKFold(n_splits=self.n_inner_splits, shuffle=True, random_state=self.seed)
+        self.outer_cv = StratifiedKFold(n_splits=self.n_outer_splits, shuffle=True, random_state=self.seed)
         self._set_global_seed()
 
     def _set_global_seed(self):
@@ -117,9 +109,7 @@ class ModelCVEvaluator:
         return X_pd_copy
 
     def _build_column_transformer(self) -> ColumnTransformer:
-        return ColumnTransformer(
-            **self.feature_transformer_config, use_ofe_features=self.use_ofe_features
-        )
+        return ColumnTransformer(**self.feature_transformer_config, use_ofe_features=self.use_ofe_features)
 
     def _setup_mlflow(self) -> None:
         """
@@ -154,9 +144,7 @@ class ModelCVEvaluator:
             ValueError: If self.model_type is not a supported model name.
         """
         if self.model_type == lightgbm_model_name:
-            return LGBMClassifier(
-                verbose=-1, importance_type="gain", random_state=self.seed
-            )
+            return LGBMClassifier(verbose=-1, importance_type="gain", random_state=self.seed)
 
         raise ValueError(f"Unsupported model type: {self.model_type}")
 
@@ -175,27 +163,15 @@ class ModelCVEvaluator:
         """
         if self.model_type == lightgbm_model_name:
             params = {
-                "n_estimators": trial.suggest_int(
-                    "n_estimators", 100, 1000
-                ),  # number of trees
-                "num_leaves": trial.suggest_int(
-                    "num_leaves", 16, 256
-                ),  # number of leaves in one tree
-                "learning_rate": trial.suggest_float(
-                    "learning_rate", 0.01, 0.2
-                ),  # step size for optimisation
-                "subsample": trial.suggest_float(
-                    "subsample", 0.5, 1.0
-                ),  # fraction of samples to be used for each tree
+                "n_estimators": trial.suggest_int("n_estimators", 100, 1000),  # number of trees
+                "num_leaves": trial.suggest_int("num_leaves", 16, 256),  # number of leaves in one tree
+                "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2),  # step size for optimisation
+                "subsample": trial.suggest_float("subsample", 0.5, 1.0),  # fraction of samples to be used for each tree
                 "colsample_bytree": trial.suggest_float(
                     "colsample_bytree", 0.5, 1.0
                 ),  # fraction of features used per tree
-                "reg_alpha": trial.suggest_float(
-                    "reg_alpha", 1e-4, 0.1, log=True
-                ),  # L1 regularisation
-                "reg_lambda": trial.suggest_float(
-                    "reg_lambda", 1e-4, 0.3, log=True
-                ),  # L2 regularisation
+                "reg_alpha": trial.suggest_float("reg_alpha", 1e-4, 0.1, log=True),  # L1 regularisation
+                "reg_lambda": trial.suggest_float("reg_lambda", 1e-4, 0.3, log=True),  # L2 regularisation
                 "metric": "binary_logloss",  # evaluation metric
                 "random_state": 165,  # seed for reproducibility
                 "verbose": -1,  # suppress warnings and info
@@ -203,9 +179,7 @@ class ModelCVEvaluator:
 
             # RFE
             if self.use_feature_engineering:
-                params["n_features_to_select"] = trial.suggest_float(
-                    "n_features_to_select", 0.5, 1.0
-                )
+                params["n_features_to_select"] = trial.suggest_float("n_features_to_select", 0.5, 1.0)
 
             return params
 
@@ -298,9 +272,7 @@ class ModelCVEvaluator:
 
                 with open(tmp_file_path, "wb") as f:
                     pickle.dump(study, f)
-                mlflow.log_artifact(
-                    "optuna_study.pkl", artifact_path="pickles/optuna_study.pkl"
-                )
+                mlflow.log_artifact("optuna_study.pkl", artifact_path="pickles/optuna_study.pkl")
 
     def _mlflow_callback(
         self, outer_fold_run_id: str, experiment_name: str
@@ -381,9 +353,7 @@ class ModelCVEvaluator:
         X_val_outer_selected = X_val_outer_pd[selected_features]
         for col, cats in category_schema.items():
             if col in X_val_outer_selected.columns:
-                X_val_outer_selected[col] = pd.Categorical(
-                    X_val_outer_selected[col], categories=cats
-                )
+                X_val_outer_selected[col] = pd.Categorical(X_val_outer_selected[col], categories=cats)
 
         y_pred_proba = final_model.predict_proba(X_val_outer_selected)
 
@@ -409,9 +379,7 @@ class ModelCVEvaluator:
             return (X_train, X_val, selected_features)
 
         n_features_to_select = params.pop("n_features_to_select")
-        rfe = self._get_feature_selector(
-            fit_params=params, n_features_to_select=n_features_to_select
-        )
+        rfe = self._get_feature_selector(fit_params=params, n_features_to_select=n_features_to_select)
 
         X_train_rfe = X_train.copy()
         for col in X_train_rfe.select_dtypes(include=["category"]).columns:
@@ -424,9 +392,7 @@ class ModelCVEvaluator:
 
         return (X_train_selected, X_val_selected, selected_features)
 
-    def _get_feature_selector(
-        self, fit_params: dict, n_features_to_select: float, transform: str = "pandas"
-    ) -> RFE:
+    def _get_feature_selector(self, fit_params: dict, n_features_to_select: float, transform: str = "pandas") -> RFE:
         if transform not in ["default", "pandas", "polars"]:
             raise ValueError(f"Invalid transform for RFE: {transform}")
 
@@ -457,9 +423,7 @@ class ModelCVEvaluator:
         all_params = self._fetch_param_suggestions(trial)
         inner_fold_scores = []
 
-        for inner_train_idx, inner_val_idx in self.inner_cv.split(
-            X_train_outer, y_train_outer
-        ):
+        for inner_train_idx, inner_val_idx in self.inner_cv.split(X_train_outer, y_train_outer):
             X_train_inner = X_train_outer.iloc[inner_train_idx]
             X_val_inner = X_train_outer.iloc[inner_val_idx]
             y_train_inner, y_val_inner = (
@@ -483,9 +447,7 @@ class ModelCVEvaluator:
             )
 
             # Append loss of last iteration to inner_fold_scores
-            inner_fold_scores.append(
-                model.evals_result_["valid_0"]["binary_logloss"][-1]
-            )
+            inner_fold_scores.append(model.evals_result_["valid_0"]["binary_logloss"][-1])
 
         mean_score = np.mean(inner_fold_scores)
 
@@ -546,22 +508,16 @@ class ModelCVEvaluator:
         fit_params = params.copy()
 
         # 1. Feature selection
-        X_train_selected, X_val_selected, selected_features = (
-            self._get_selected_features(
-                X_train=X_train,
-                X_val=X_val,
-                y_train=y_train,
-                params=fit_params,
-            )
+        X_train_selected, X_val_selected, selected_features = self._get_selected_features(
+            X_train=X_train,
+            X_val=X_val,
+            y_train=y_train,
+            params=fit_params,
         )
 
         # 2. Categorical Handling
-        current_categories = X_train_selected.select_dtypes(
-            include=["category"]
-        ).columns.tolist()
-        category_schema = {
-            col: X_train_selected[col].cat.categories for col in current_categories
-        }
+        current_categories = X_train_selected.select_dtypes(include=["category"]).columns.tolist()
+        category_schema = {col: X_train_selected[col].cat.categories for col in current_categories}
 
         # 3. Model Training
         model = self._fetch_model()
@@ -589,9 +545,7 @@ class ModelCVEvaluator:
         X_train_outer: pd.DataFrame,
         y_train_outer: np.ndarray,
         best_params: dict,
-    ) -> Tuple[
-        LGBMClassifier, np.ndarray, dict[str, pd.Index], Optional[ColumnTransformer]
-    ]:
+    ) -> Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index], Optional[ColumnTransformer]]:
         """Fit model using the best hyperparameters and selected features
 
         Args:
@@ -614,23 +568,17 @@ class ModelCVEvaluator:
             column_transformer = self._build_column_transformer()
             X_train_outer_pd = column_transformer.fit_transform(X_train_outer_pd)
 
-        final_model, selected_features, category_schema = (
-            self._fit_model_and_select_features(
-                X_train=X_train_outer_pd, y_train=y_train_outer, params=fit_params
-            )
+        final_model, selected_features, category_schema = self._fit_model_and_select_features(
+            X_train=X_train_outer_pd, y_train=y_train_outer, params=fit_params
         )
 
         if self.log_feature_importance:
-            fig = plot_feature_importance(
-                X_train=X_train_outer_pd[selected_features], model=final_model
-            )
+            fig = plot_feature_importance(X_train=X_train_outer_pd[selected_features], model=final_model)
             self._log_figure(name="feature_importance", fig=fig)
 
         return final_model, selected_features, category_schema, column_transformer
 
-    def get_generalisation_error(
-        self, X_train: pl.DataFrame, y_train: pl.DataFrame
-    ) -> OuterCVResults:
+    def get_generalisation_error(self, X_train: pl.DataFrame, y_train: pl.DataFrame) -> OuterCVResults:
         """Use nested cross-validation to obtain an unbiased estimate of the loss. Hyperparameter tuning is performed in the inner cross-validation loop.
 
         Args:
@@ -647,25 +595,17 @@ class ModelCVEvaluator:
 
         # Apply rowwise transformations to the entire dataset
         if self.use_feature_engineering and self.row_wise_transformations is not None:
-            X_train_pd = self.row_wise_transformations.apply_row_wise_transformations(
-                X_train_pd
-            )
+            X_train_pd = self.row_wise_transformations.apply_row_wise_transformations(X_train_pd)
 
-        with mlflow.start_run(
-            run_name=f"{self.run_name}_{self.model_type}"
-        ) as parent_run:
+        with mlflow.start_run(run_name=f"{self.run_name}_{self.model_type}") as parent_run:
             outer_cv_results.parent_run_id = parent_run.info.run_id
-            for i, (train_idx, val_idx) in enumerate(
-                self.outer_cv.split(X_train_pd, y_train_np)
-            ):
+            for i, (train_idx, val_idx) in enumerate(self.outer_cv.split(X_train_pd, y_train_np)):
                 X_train_outer = X_train_pd.iloc[train_idx]
                 X_val_outer = X_train_pd.iloc[val_idx]
                 y_train_outer = y_train_np[train_idx]
                 y_val_outer = y_train_np[val_idx]
 
-                with mlflow.start_run(
-                    nested=True, run_name=f"Outer_fold_{i + 1}"
-                ) as run:
+                with mlflow.start_run(nested=True, run_name=f"Outer_fold_{i + 1}") as run:
                     parent_id = run.info.run_id
                     callback_fn = (
                         self._mlflow_callback(
@@ -686,22 +626,18 @@ class ModelCVEvaluator:
                             feature_boosting=True,
                             n_jobs=self.n_jobs,
                         )
-                        X_train_outer, X_val_outer, mapping = (
-                            self.open_fe_transformations.apply_openfe_features(
-                                X_train=X_train_outer,
-                                X_val=X_val_outer,
-                                features=feature_list,
-                                n_jobs=self.n_jobs,
-                            )
+                        X_train_outer, X_val_outer, mapping = self.open_fe_transformations.apply_openfe_features(
+                            X_train=X_train_outer,
+                            X_val=X_val_outer,
+                            features=feature_list,
+                            n_jobs=self.n_jobs,
                         )
 
                         self._log_artifact(f"ofe_fold_{i}", ofe_object)
                         self._log_artifact(f"ofe_feature_mapping_fold_{i}", mapping)
 
                         for feat_name, formula in mapping.items():
-                            self.logger.info(
-                                f"Feature: {feat_name:20} | Formula: {formula}"
-                            )
+                            self.logger.info(f"Feature: {feat_name:20} | Formula: {formula}")
 
                     # 1. Perform full hyperparamter tuning
                     _, best_params = self._hyperparameter_tuning(

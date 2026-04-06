@@ -52,14 +52,9 @@ class OpenFETransformations:
             n_jobs=n_jobs,
         )
 
-        generated_cols = [
-            c for c in X_train_transformed.columns if c not in original_cols
-        ]
+        generated_cols = [c for c in X_train_transformed.columns if c not in original_cols]
 
-        mapping = {
-            gen_col: tree_to_formula(f)
-            for gen_col, f in zip(generated_cols, selected_features)
-        }
+        mapping = {gen_col: tree_to_formula(f) for gen_col, f in zip(generated_cols, selected_features)}
 
         # We return the transformed DFs as-is (no renaming) plus the mapping
         return X_train_transformed, X_val_transformed, mapping
