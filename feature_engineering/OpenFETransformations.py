@@ -17,7 +17,7 @@ class OpenFETransformations:
         categorical_features: List[str],
         feature_boosting: bool,
         n_jobs: int,
-    ) -> Tuple[np.ndarray, OpenFE]:
+    ) -> Tuple[np.ndarray, np.ndarray, OpenFE]:
         ofe = OpenFE()
         features = ofe.fit(
             data=X_train,
@@ -28,7 +28,18 @@ class OpenFETransformations:
             n_jobs=n_jobs,
         )
 
-        return features, ofe
+        selected_features = features[: self.n_features]
+
+        row_wise_features = []
+        column_wise_features = []
+
+        for feature in selected_features:
+            if feature.row_wise:
+                row_wise_features.append(feature)
+            else:
+                column_wise_features.append(feature)
+
+        return row_wise_features, column_wise_features, ofe
 
     def apply_openfe_features(
         self,
@@ -41,6 +52,9 @@ class OpenFETransformations:
         Applies OpenFE transformations, keeping generic column names (auto_fe_1, etc.)
         to ensure compatibility with LightGBM, and returns a formula mapping.
         """
+        if len(features) == 0:
+            return X_train, X_val, {}
+
         selected_features = features[: self.n_features]
         original_cols = X_train.columns.tolist()
 
@@ -52,9 +66,13 @@ class OpenFETransformations:
             n_jobs=n_jobs,
         )
 
-        generated_cols = [c for c in X_train_transformed.columns if c not in original_cols]
+        generated_cols = [
+            c for c in X_train_transformed.columns if c not in original_cols
+        ]
 
-        mapping = {gen_col: tree_to_formula(f) for gen_col, f in zip(generated_cols, selected_features)}
+        mapping = {
+            gen_col: tree_to_formula(f)
+            for gen_col, f in zip(generated_cols, selected_features)
+        }
 
-        # We return the transformed DFs as-is (no renaming) plus the mapping
         return X_train_transformed, X_val_transformed, mapping

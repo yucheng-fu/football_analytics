@@ -5,15 +5,29 @@ import pandas as pd
 all_operators = ["freq"]
 num_operators = ["abs", "log", "sqrt", "square", "sigmoid", "round", "residual"]
 num_num_operators = ["min", "max", "+", "-", "*", "/"]
-cat_num_operators = ["GroupByThenMin", "GroupByThenMax", "GroupByThenMean",
-                     "GroupByThenMedian", "GroupByThenStd", "GroupByThenRank"]
+cat_num_operators = [
+    "GroupByThenMin",
+    "GroupByThenMax",
+    "GroupByThenMean",
+    "GroupByThenMedian",
+    "GroupByThenStd",
+    "GroupByThenRank",
+]
 cat_cat_operators = ["Combine", "CombineThenFreq", "GroupByThenNUnique"]
 
 symmetry_operators = ["min", "max", "+", "-", "*", "/", "Combine", "CombineThenFreq"]
-cal_all_operators = ["freq",
-                     "GroupByThenMin", "GroupByThenMax", "GroupByThenMean",
-                     "GroupByThenMedian", "GroupByThenStd", "GroupByThenRank",
-                     "Combine", "CombineThenFreq", "GroupByThenNUnique"]
+cal_all_operators = [
+    "freq",
+    "GroupByThenMin",
+    "GroupByThenMax",
+    "GroupByThenMean",
+    "GroupByThenMedian",
+    "GroupByThenStd",
+    "GroupByThenRank",
+    "Combine",
+    "CombineThenFreq",
+    "GroupByThenNUnique",
+]
 
 
 class Node(object):
@@ -40,7 +54,7 @@ class Node(object):
             child.f_delete()
 
     def calculate(self, data, is_root=False):
-        if self.name in all_operators+num_operators:
+        if self.name in all_operators + num_operators:
             d = self.children[0].calculate(data)
             if self.name == "abs":
                 new_data = d.abs()
@@ -100,39 +114,59 @@ class Node(object):
                 temp = d1.groupby(d2).std()
                 temp.loc[np.nan] = np.nan
                 new_data = d2.apply(lambda x: temp.loc[x])
-            elif self.name == 'GroupByThenRank':
+            elif self.name == "GroupByThenRank":
                 new_data = d1.groupby(d2).rank(ascending=True, pct=True)
             elif self.name == "GroupByThenFreq":
+
                 def _f(x):
                     value_counts = x.value_counts()
                     value_counts.loc[np.nan] = np.nan
                     return x.apply(lambda x: value_counts.loc[x])
+
                 new_data = d1.groupby(d2).apply(_f)
             elif self.name == "GroupByThenNUnique":
                 nunique = d1.groupby(d2).nunique()
                 nunique.loc[np.nan] = np.nan
                 new_data = d2.apply(lambda x: nunique.loc[x])
             elif self.name == "Combine":
-                temp = d1.astype(str) + '_' + d2.astype(str)
+                temp = d1.astype(str) + "_" + d2.astype(str)
                 temp[d1.isna() | d2.isna()] = np.nan
                 temp, _ = temp.factorize()
                 new_data = pd.Series(temp, index=d1.index).astype("float64")
             elif self.name == "CombineThenFreq":
-                temp = d1.astype(str) + '_' + d2.astype(str)
+                temp = d1.astype(str) + "_" + d2.astype(str)
                 temp[d1.isna() | d2.isna()] = np.nan
                 value_counts = temp.value_counts()
                 value_counts.loc[np.nan] = np.nan
                 new_data = temp.apply(lambda x: value_counts.loc[x])
             else:
                 raise NotImplementedError(f"Unrecognized operator {self.name}.")
-        if self.name == 'Combine':
-            new_data = new_data.astype('category')
+        if self.name == "Combine":
+            new_data = new_data.astype("category")
         else:
-            new_data = new_data.astype('float')
+            new_data = new_data.astype("float")
         if is_root:
             self.data = new_data
         return new_data
 
+    @property
+    def is_rowwise(self):
+        """
+        Returns True if the operation is a simple row-wise transformation.
+        Returns False if the operation requires looking at the whole column (aggregations).
+        """
+        rowwise_ops = num_operators + num_num_operators
+
+        if self.name in rowwise_ops:
+            return True
+        return False
+
+    @property
+    def is_stateful(self):
+        """
+        Returns True for aggregations like GroupBy, Freq, or Rank.
+        """
+        return self.name in cal_all_operators
 
 
 class FNode(object):

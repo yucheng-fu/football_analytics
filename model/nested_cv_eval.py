@@ -26,7 +26,7 @@ from optuna.integration import LightGBMPruningCallback
 from optuna.visualization import plot_param_importances
 from lightgbm.callback import early_stopping
 import pandas as pd
-from feature_engineering.FeatureEngineeringTransformer import ColumnTransformer
+from feature_engineering.ColumnTransformer import ColumnTransformer
 from feature_engineering.RowWiseTransformations import RowWiseTransformations
 from feature_engineering.OpenFETransformations import OpenFETransformations
 
@@ -677,19 +677,22 @@ class ModelCVEvaluator:
 
                     if self.use_ofe and self.open_fe_transformations is not None:
                         self.logger.info(f"Fitting OpenFE on fold {i + 1}")
-                        feature_list, ofe_object = self.open_fe_transformations.fit(
-                            X_train=X_train_outer,
-                            y_train=y_train_outer,
-                            task="classification",
-                            categorical_features=self.categorical_columns,
-                            feature_boosting=True,
-                            n_jobs=self.n_jobs,
+                        row_wise_features, column_wise_features, ofe_object = (
+                            self.open_fe_transformations.fit(
+                                X_train=X_train_outer,
+                                y_train=y_train_outer,
+                                task="classification",
+                                categorical_features=self.categorical_columns,
+                                feature_boosting=True,
+                                n_jobs=self.n_jobs,
+                            )
                         )
+
                         X_train_outer, X_val_outer, mapping = (
                             self.open_fe_transformations.apply_openfe_features(
                                 X_train=X_train_outer,
                                 X_val=X_val_outer,
-                                features=feature_list,
+                                features=row_wise_features,
                                 n_jobs=self.n_jobs,
                             )
                         )
