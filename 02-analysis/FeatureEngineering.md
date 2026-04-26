@@ -103,3 +103,8 @@ Number of outer folds: 3
 Run ID: 68fd329b6ebb4a6b892765849ef7d657
 Number of outer folds: 3
 95% confidence interval for best estimate of generalisation: 0.2679799623308192 ± 0.0013095576881769126
+
+### Run 11: OFE
+Run ID: 8e9a2395894d4a0a8ad20e7d198199d8
+Number of outer folds: 3
+95% confidence interval for best estimate of generalisation: 0.2534289568910852 ± 0.00277424530519379

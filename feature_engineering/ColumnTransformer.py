@@ -14,9 +14,11 @@ class ColumnTransformer(BaseEstimator, TransformerMixin):
         cat_columns: list[str] | None = None,
         feature_name_mapping: Optional[dict[str, str]] = None,
     ):
-        self.ohe_columns = ohe_columns or []
-        self.cat_columns = cat_columns or []
-        self.feature_name_mapping = feature_name_mapping or {}
+        self.ohe_columns = [] if ohe_columns is None else ohe_columns
+        self.cat_columns = [] if cat_columns is None else cat_columns
+        self.feature_name_mapping = (
+            {} if feature_name_mapping is None else feature_name_mapping
+        )
         # handle_unknown='ignore' is crucial for consistent nested CV
         self.encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
         self.feature_nodes = []
