@@ -279,6 +279,31 @@ class ModelCVEvaluator:
         """
         mlflow.log_figure(fig, f"plots/{name}.png")
 
+    def _augment_params_with_boosting_rounds(
+        self, best_params: dict, final_model: LGBMClassifier
+    ) -> dict:
+        """Add boosted-rounds reporting fields for MLflow logging.
+
+        Args:
+            best_params (dict): Tuned parameter dictionary.
+            final_model (LGBMClassifier): Fitted model instance.
+
+        Returns:
+            dict: Copy of params including used-rounds metadata when available.
+        """
+        logged_params = best_params.copy()
+        n_estimators_budget = logged_params.get("n_estimators")
+        best_iteration = getattr(final_model, "best_iteration_", None)
+
+        if best_iteration is not None and int(best_iteration) > 0:
+            logged_params["n_estimators_used"] = int(best_iteration)
+            if n_estimators_budget is not None:
+                logged_params["stopped_early"] = int(
+                    int(best_iteration) < int(n_estimators_budget)
+                )
+
+        return logged_params
+
     def _append_and_log_metrics_and_params(
         self,
         outer_cv_results: OuterCVResults,
@@ -286,7 +311,6 @@ class ModelCVEvaluator:
         outer_fold_log_loss: float,
         best_params: dict,
         run: Run,
-        study: optuna.study.Study | None,
     ) -> None:
         """Append fold outputs to results and log metrics/params to MLflow.
 
@@ -296,7 +320,6 @@ class ModelCVEvaluator:
             outer_fold_log_loss (float): Validation log-loss for the fold.
             best_params (dict): Best hyperparameters for the fold.
             run (Run): Current MLflow run.
-            study (optuna.study.Study | None): Optional Optuna study to persist.
         """
 
         outer_cv_results.scores.append(outer_fold_log_loss)
@@ -547,7 +570,7 @@ class ModelCVEvaluator:
         callback_fn: Callable[[optuna.Study, optuna.trial.Trial], None],
         open_fe_nodes: Optional[List[Node]] = None,
         open_fe_feature_name_mapping: Optional[dict[str, str]] = None,
-    ) -> Tuple[optuna.study.Study, dict]:
+    ) -> dict:
         """Run Optuna hyperparameter tuning for one outer fold.
 
         Args:
@@ -593,7 +616,7 @@ class ModelCVEvaluator:
             fig = plot_param_importances(study=study)
             self._log_figure(name="parameter_importance", fig=fig)
 
-        return study, best_params
+        return best_params
 
     def _fit_model_and_select_features(
         self,
@@ -645,9 +668,11 @@ class ModelCVEvaluator:
         callbacks = []
         if trial is not None:
             callbacks.append(LightGBMPruningCallback(trial, "binary_logloss"))
-        # callbacks.append(early_stopping(stopping_rounds=50, verbose=False))
+        has_validation = X_val_selected is not None and y_val is not None
+        if has_validation:
+            callbacks.append(early_stopping(stopping_rounds=50, verbose=False))
 
-        eval_set = [(X_val_selected, y_val)] if X_val_selected is not None else None
+        eval_set = [(X_val_selected, y_val)] if has_validation else None
         model.fit(
             X_train_selected,
             y_train,
@@ -842,14 +867,18 @@ class ModelCVEvaluator:
                         category_schema=category_schema,
                         column_transformer=column_transformer,
                     )
+
+                    logged_params = self._augment_params_with_boosting_rounds(
+                        best_params=best_params, final_model=final_model
+                    )
+
                     # 4. Log metrics and parameters to MLFlow
                     self._append_and_log_metrics_and_params(
                         outer_cv_results=outer_cv_results,
                         selected_features=selected_features,
                         outer_fold_log_loss=outer_fold_log_loss,
-                        best_params=best_params,
+                        best_params=logged_params,
                         run=run,
-                        study=None,
                     )
 
             mean_score = np.mean(outer_cv_results.scores)

@@ -3,8 +3,7 @@ from lightgbm import LGBMClassifier
 import lightgbm as lgb
 from sklearn.model_selection import train_test_split
 import optuna
-import matplotlib.pyplot as plt
-from utils.statics import lightgbm_model_name, tracking_uri
+from utils.statics import tracking_uri
 import mlflow
 import numpy as np
 import logging
@@ -12,11 +11,12 @@ from model.data_classes import OuterCVResults
 from model.nested_cv_eval import ModelCVEvaluator
 from feature_engineering.OpenFE.utils import tree_to_formula
 from feature_engineering.OpenFE.FeatureGenerator import Node
-from utils.utils import plot_feature_importance
+from utils.utils import plot_feature_importance, plot_loss_curve
 from sklearn import clone
 from typing import List, Optional, Tuple
 import pandas as pd
 from optuna.integration import LightGBMPruningCallback
+from lightgbm.callback import early_stopping
 
 
 class ModelParamTuner(ModelCVEvaluator):
@@ -39,28 +39,6 @@ class ModelParamTuner(ModelCVEvaluator):
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment_name=self.experiment_name)
 
-    def plot_loss_curve(self, train_loss: list, valid_loss: list) -> None:
-        """Plot loss curve for training
-
-        Args:
-            train_loss (list): Training loss values
-            valid_loss (list): Validation loss values
-        """
-        plt.ioff()
-        fig = plt.figure(figsize=(10, 6))
-        epochs = range(1, len(train_loss) + 1)
-        plt.plot(epochs, train_loss, "r", label="Training loss")
-        plt.plot(epochs, valid_loss, "b", label="Validation loss")
-        plt.title(f"Training and Validation Loss - {self.model_type}")
-        plt.xlabel("Boosting Rounds")
-        plt.ylabel("Log Loss")
-        plt.legend()
-        plt.grid(True, linestyle="--", alpha=0.5)
-        plt.close(fig)
-        plt.ion()
-
-        mlflow.log_figure(fig, artifact_file=f"{self.model_type}_loss_curve.png")
-
     def _fit_model_and_select_features_with_loss_curve(
         self,
         X_train: pd.DataFrame,
@@ -69,7 +47,7 @@ class ModelParamTuner(ModelCVEvaluator):
         X_val: Optional[pd.DataFrame] = None,
         y_val: Optional[np.ndarray] = None,
         trial: Optional[optuna.trial.Trial] = None,
-        plot_loss_curve: bool = False,
+        should_plot_loss_curve: bool = False,
     ) -> Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index]]:
         """Fit model with optional RFE and optional train/valid loss curve logging."""
         fit_params = params.copy()
@@ -94,7 +72,7 @@ class ModelParamTuner(ModelCVEvaluator):
         model.set_params(**fit_params)
 
         has_validation = X_val_selected is not None and y_val is not None
-        record_curve = plot_loss_curve and has_validation
+        record_curve = should_plot_loss_curve and has_validation
 
         callbacks = []
         if trial is not None:
@@ -113,6 +91,7 @@ class ModelParamTuner(ModelCVEvaluator):
                 callbacks.append(lgb.record_evaluation(results))
             else:
                 eval_set = [(X_val_selected, y_val)]
+            callbacks.append(early_stopping(stopping_rounds=50, verbose=False))
 
         model.fit(
             X_train_selected,
@@ -128,7 +107,8 @@ class ModelParamTuner(ModelCVEvaluator):
             train_loss = results.get("train", {}).get("binary_logloss")
             valid_loss = results.get("valid", {}).get("binary_logloss")
             if train_loss and valid_loss:
-                self.plot_loss_curve(train_loss, valid_loss)
+                fig = plot_loss_curve(train_loss, valid_loss, self.model_type)
+                self._log_figure(name=f"{self.model_type}_loss_curve", fig=fig)
 
         return model, selected_features, category_schema
 
@@ -172,7 +152,7 @@ class ModelParamTuner(ModelCVEvaluator):
                 params=best_params,
                 X_val=X_val_outer_pd,
                 y_val=y_val_outer,
-                plot_loss_curve=plot_loss_curve,
+                should_plot_loss_curve=plot_loss_curve,
             )
         )
 
@@ -264,7 +244,7 @@ class ModelParamTuner(ModelCVEvaluator):
                     self.logger.info(f"Feature: {feat_name:20} | Formula: {formula}")
 
             # 1. Perform full hyperparamter tuning
-            study, best_params = self._hyperparameter_tuning(
+            best_params = self._hyperparameter_tuning(
                 X_train_outer=X_train,
                 y_train_outer=y_train,
                 callback_fn=callback_fn,
@@ -299,13 +279,16 @@ class ModelParamTuner(ModelCVEvaluator):
                 column_transformer=column_transformer,
             )
 
+            logged_params = self._augment_params_with_boosting_rounds(
+                best_params=best_params, final_model=final_model
+            )
+
             self._append_and_log_metrics_and_params(
                 outer_cv_results=outer_cv_results,
                 selected_features=selected_features,
                 outer_fold_log_loss=outer_fold_log_loss,
-                best_params=best_params,
+                best_params=logged_params,
                 run=run,
-                study=study,
             )
 
         mlflow.end_run()

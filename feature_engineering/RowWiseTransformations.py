@@ -7,8 +7,8 @@ from typing import List
 
 
 class RowWiseTransformations:
-    def __init__(self, use_ofe_features: bool = False):
-        self.use_ofe_features = use_ofe_features
+    def __init__(self):
+        pass
 
     def apply_row_wise_transformations(self, X: pd.DataFrame) -> pd.DataFrame:
         df = X.copy()
@@ -53,23 +53,4 @@ class RowWiseTransformations:
             float
         )
 
-        if self.use_ofe_features:
-            df["duration_div_log_velocity"] = df["duration"] / df[
-                "log_velocity"
-            ].replace(0, np.nan)
-            df["min_end_x_duration"] = np.minimum(df["end_x"], df["duration"])
-
         return df
-
-    def apply_openfe_transformations(
-        self, X: pd.DataFrame, feature_list: List[Node]
-    ) -> pd.DataFrame:
-        X_new = pd.DataFrame(index=X.index)
-
-        for feature in feature_list:
-            feature.calculate(X_new, is_root=True)
-            name = tree_to_formula(feature)
-            X_new[name] = feature.data
-            feature.delete()
-
-        return pd.concat([X, X_new], axis=1)
