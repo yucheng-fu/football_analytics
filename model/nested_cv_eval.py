@@ -91,17 +91,18 @@ class ModelCVEvaluator:
         self._set_global_seed()
 
     def _set_global_seed(self):
+        """Set global random seeds used by NumPy and Python's random module."""
         np.random.seed(self.seed)
         random.seed(self.seed)
 
     def _categorical_feature_names(self, X_pd: pd.DataFrame) -> list[str]:
-        """_summary_
+        """Return categorical column names that are present in a dataframe.
 
         Args:
-            X_pd (pd.DataFrame): _description_
+            X_pd (pd.DataFrame): Input dataframe.
 
         Returns:
-            list[str]: _description_
+            list[str]: Valid categorical column names that exist in ``X_pd``.
         """
         names: list[str] = []
         for col in self.categorical_columns:
@@ -112,13 +113,14 @@ class ModelCVEvaluator:
         return names
 
     def _apply_categorical_dtypes(self, X_pd: pd.DataFrame) -> pd.DataFrame:
-        """_summary_
+        """Return a copy of ``X_pd`` with categorical dtypes enforced.
 
         Args:
-            X_pd (pd.DataFrame): _description_
+            X_pd (pd.DataFrame): Input dataframe.
 
         Returns:
-            pd.DataFrame: _description_
+            pd.DataFrame: Copied dataframe with object/string columns cast to
+                ``category`` and configured categorical columns enforced.
         """
         X_pd_copy = X_pd.copy()
 
@@ -132,12 +134,7 @@ class ModelCVEvaluator:
         return X_pd_copy
 
     def _setup_mlflow(self) -> None:
-        """
-        Sets up tracking uri and experiment for MLFlow
-
-        Returns:
-            None
-        """
+        """Configure MLflow and logging verbosity for a training session."""
         self.logger.info(
             f"""Starting training with model {self.model_type} with the following configuration:
         - {self.n_inner_splits} inner splits
@@ -256,11 +253,11 @@ class ModelCVEvaluator:
         )
 
     def _log_artifact(self, name: str, object: Any) -> None:
-        """_summary_
+        """Serialize an object to a temporary pickle file and log it to MLflow.
 
         Args:
-            name (str): _description_
-            object (Any): _description_
+            name (str): Artifact name stem.
+            object (Any): Python object to serialize.
         """
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_file_path = os.path.join(tmp_dir, f"{name}.pkl")
@@ -274,11 +271,11 @@ class ModelCVEvaluator:
             )
 
     def _log_figure(self, name: str, fig: plt.figure):
-        """_summary_
+        """Log a Matplotlib figure artifact to MLflow.
 
         Args:
-            name (str): _description_
-            fig (plt.figure): _description_
+            name (str): Figure name stem.
+            fig (plt.figure): Matplotlib figure object.
         """
         mlflow.log_figure(fig, f"plots/{name}.png")
 
@@ -291,18 +288,15 @@ class ModelCVEvaluator:
         run: Run,
         study: optuna.study.Study | None,
     ) -> None:
-        """Append and log metrics and params to the MLFlow run
+        """Append fold outputs to results and log metrics/params to MLflow.
 
         Args:
-            outer_cv_results (OuterCVResults): OuterCVResults object to append results to
-            selected_features (np.ndarray): array of selected features
-            outer_fold_log_loss (float): log_loss evaluated on the outer fold validation set
-            best_params (dict): best hyperparameters found in the outer fold
-            run (Run): MLFlow run object
-            study (optuna.study.Study | None): Optuna study object (optional)
-
-        Returns:
-            None
+            outer_cv_results (OuterCVResults): Aggregated outer-CV results container.
+            selected_features (np.ndarray): Selected feature names for the fold.
+            outer_fold_log_loss (float): Validation log-loss for the fold.
+            best_params (dict): Best hyperparameters for the fold.
+            run (Run): Current MLflow run.
+            study (optuna.study.Study | None): Optional Optuna study to persist.
         """
 
         outer_cv_results.scores.append(outer_fold_log_loss)
@@ -327,22 +321,22 @@ class ModelCVEvaluator:
     def _mlflow_callback(
         self, outer_fold_run_id: str, experiment_name: str
     ) -> Callable[[optuna.Study, optuna.trial.Trial], None]:
-        """MLFlow callback function for logging parallel Optuna runs as nested runs in MLFlow
+        """Build a callback that logs each Optuna trial as a nested MLflow run.
 
         Args:
-            outer_fold_run_id (str): MLFlow run id of the outer fold
-            experiment_name (str): Name of the experiment
+            outer_fold_run_id (str): MLflow run id for the current outer fold.
+            experiment_name (str): MLflow experiment name.
 
         Returns:
-            Callable[[optuna.Study, optuna.trial.Trial]]: _callback method
+            Callable[[optuna.Study, optuna.trial.Trial], None]: Trial logging callback.
         """
 
         def _callback(study: optuna.Study, trial: optuna.trial.Trial):
-            """Callback function for Optuna
+            """Log one Optuna trial under the parent outer-fold run.
 
             Args:
-                study (optuna.Study): _description_
-                trial (optuna.trial.Trial): _description_
+                study (optuna.Study): Current Optuna study (unused directly).
+                trial (optuna.trial.Trial): Trial to log.
             """
 
             client = MlflowClient()
@@ -382,17 +376,18 @@ class ModelCVEvaluator:
         category_schema: dict[str, pd.Index],
         column_transformer: Optional[ColumnTransformer],
     ) -> float:
-        """Evaluate model on validation set
+        """Evaluate the fitted model on an outer validation fold.
 
         Args:
-            X_val_outer (pd.DataFrame): X_val outer fold
-            y_val_outer (np.ndarray): y_val outer fold
-            rfecv (RFECV | None): RFECV obejct (optional)
-            final_model (LGBMClassifier): trained final model
-            category_schema (dict[str, pd.Index]): Training-time categories for categorical features
+            X_val_outer (pd.DataFrame): Validation features for the outer fold.
+            y_val_outer (np.ndarray): Validation labels for the outer fold.
+            selected_features (np.ndarray): Selected model input columns.
+            final_model (LGBMClassifier): Trained final model.
+            category_schema (dict[str, pd.Index]): Training-time categories per categorical column.
+            column_transformer (Optional[ColumnTransformer]): Fitted transformer for column-wise features.
 
         Returns:
-            float: log_loss evaluted on the outer fold validation set
+            float: Log-loss on the validation fold.
         """
         X_val_outer_pd = self._apply_categorical_dtypes(X_val_outer)
 
@@ -429,16 +424,18 @@ class ModelCVEvaluator:
         params: dict,
         X_val: Optional[pd.DataFrame] = None,
     ) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
-        """_summary_
+        """Apply optional RFE-based feature selection and align train/validation columns.
 
         Args:
-            X_train (pd.DataFrame): _description_
-            y_train (np.ndarray): _description_
-            params (dict): _description_
-            X_val (Optional[pd.DataFrame], optional): _description_. Defaults to None.
+            X_train (pd.DataFrame): Training features.
+            y_train (np.ndarray): Training labels.
+            params (dict): Model/selector parameters (may be mutated).
+            X_val (Optional[pd.DataFrame], optional): Optional validation features.
 
         Returns:
-            Tuple[pd.DataFrame, pd.DataFrame, np.ndarray]: _description_
+            Tuple[pd.DataFrame, pd.DataFrame | None, np.ndarray]: Selected
+                training dataframe, selected validation dataframe (if provided),
+                and selected feature names.
         """
         if not self.use_feature_selection:
             selected_features = X_train.columns.to_list()
@@ -463,18 +460,19 @@ class ModelCVEvaluator:
     def _get_feature_selector(
         self, fit_params: dict, n_features_to_select: float, transform: str = "pandas"
     ) -> RFE:
-        """_summary_
+        """Create an RFE selector configured with the current base estimator.
 
         Args:
-            fit_params (dict): _description_
-            n_features_to_select (float): _description_
-            transform (str, optional): _description_. Defaults to "pandas".
+            fit_params (dict): Parameters applied to the base estimator.
+            n_features_to_select (float): Number/fraction of features to select.
+            transform (str, optional): Output container for selector transform.
+                One of ``default``, ``pandas``, ``polars``. Defaults to ``pandas``.
 
         Raises:
-            ValueError: _description_
+            ValueError: If ``transform`` is not supported.
 
         Returns:
-            RFE: _description_
+            RFE: Configured recursive feature eliminator.
         """
         if transform not in ["default", "pandas", "polars"]:
             raise ValueError(f"Invalid transform for RFE: {transform}")
@@ -495,15 +493,18 @@ class ModelCVEvaluator:
         open_fe_nodes: Optional[List[Node]] = None,
         open_fe_feature_name_mapping: Optional[dict[str, str]] = None,
     ) -> np.ndarray:
-        """Objective function for Optuna hyperparameter tuning
+        """Compute mean inner-CV validation loss for one Optuna trial.
 
         Args:
-            trial (optuna.trial.Trial): Optuna trial
-            X_train_outer (pd.DataFrame): X_train outer fold split
-            y_train_outer (np.ndarray): y_train outer fold split
+            trial (optuna.trial.Trial): Current Optuna trial.
+            X_train_outer (pd.DataFrame): Outer-fold training features.
+            y_train_outer (np.ndarray): Outer-fold training labels.
+            open_fe_nodes (Optional[List[Node]], optional): Column-wise OpenFE nodes.
+            open_fe_feature_name_mapping (Optional[dict[str, str]], optional):
+                Mapping from OpenFE formula names to safe output column names.
 
         Returns:
-            np.ndarray: Maximum mean cross-validation score obtained by the Optuna trial across the inner folds
+            np.ndarray: Mean inner-fold binary log-loss for the trial.
         """
         all_params = self._fetch_param_suggestions(trial)
         inner_fold_scores = []
@@ -556,15 +557,19 @@ class ModelCVEvaluator:
         open_fe_nodes: Optional[List[Node]] = None,
         open_fe_feature_name_mapping: Optional[dict[str, str]] = None,
     ) -> Tuple[optuna.study.Study, dict]:
-        """Function for performing hyperparameter tuning with optuna.
+        """Run Optuna hyperparameter tuning for one outer fold.
 
         Args:
-            X_train_outer (pd.DataFrame): Outer fold of X_train
-            y_train_outer (np.ndarray): Outer fold of y_train
-            callback_fn (Callable[[optuna.Study, optuna.trial.Trial], None]): Callback function for optuna study
+            X_train_outer (pd.DataFrame): Outer-fold training features.
+            y_train_outer (np.ndarray): Outer-fold training labels.
+            callback_fn (Callable[[optuna.Study, optuna.trial.Trial], None]): Trial callback.
+            open_fe_nodes (Optional[List[Node]], optional): Column-wise OpenFE nodes.
+            open_fe_feature_name_mapping (Optional[dict[str, str]], optional):
+                Mapping from OpenFE formula names to safe output column names.
 
         Returns:
-            Tuple[optuna.study.Study, dict]: Optuna study object and dictionary of best hyperparameters
+            Tuple[optuna.study.Study | None, dict]: Optuna study and best parameters.
+                Returns ``(None, {})`` if tuning is disabled.
         """
         self.logger.info("Starting full hyperparameter tuning...")
 
@@ -608,6 +613,20 @@ class ModelCVEvaluator:
         y_val: Optional[np.ndarray] = None,
         trial: Optional[optuna.trial.Trial] = None,
     ) -> Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index]]:
+        """Fit the model once, with optional RFE and optional validation eval set.
+
+        Args:
+            X_train (pd.DataFrame): Training features.
+            y_train (np.ndarray): Training labels.
+            params (dict): Model and feature-selection parameters.
+            X_val (Optional[pd.DataFrame], optional): Validation features.
+            y_val (Optional[np.ndarray], optional): Validation labels.
+            trial (Optional[optuna.trial.Trial], optional): Trial for pruning callback.
+
+        Returns:
+            Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index]]: Fitted model,
+                selected feature names, and category schema captured from training data.
+        """
         fit_params = params.copy()
 
         # 1. Feature selection
@@ -657,16 +676,19 @@ class ModelCVEvaluator:
         open_fe_nodes: Optional[List[Node]] = None,
         open_fe_feature_name_mapping: Optional[dict[str, str]] = None,
     ) -> Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index]]:
-        """Fit model using the best hyperparameters and selected features
+        """Fit the final outer-fold model using best hyperparameters.
 
         Args:
-            X_train_outer (pd.DataFrame): Outer fold of X_train
-            y_train_outer (np.ndarray): Outer fold of y_train
-            best_params (dict): Best hyperparameters found in the outer fold
-            selected_features (np.ndarray): Array of selected features from RFECV
+            X_train_outer (pd.DataFrame): Outer-fold training features.
+            y_train_outer (np.ndarray): Outer-fold training labels.
+            best_params (dict): Best hyperparameters from tuning.
+            open_fe_nodes (Optional[List[Node]], optional): Column-wise OpenFE nodes.
+            open_fe_feature_name_mapping (Optional[dict[str, str]], optional):
+                Mapping from OpenFE formula names to safe output column names.
 
         Returns:
-            Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index]]: Trained final model, selected features, and categorical schema
+            Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index], ColumnTransformer | None]:
+                Final model, selected feature names, category schema, and fitted transformer.
         """
         self.logger.info("Fitting final model with best hyperparameters...")
 
@@ -701,14 +723,15 @@ class ModelCVEvaluator:
     def get_generalisation_error(
         self, X_train: pl.DataFrame, y_train: pl.DataFrame
     ) -> OuterCVResults:
-        """Use nested cross-validation to obtain an unbiased estimate of the loss. Hyperparameter tuning is performed in the inner cross-validation loop.
+        """Run nested CV and return aggregated outer-fold evaluation results.
 
         Args:
-            X_train (pl.DataFrame): Input features used for training
-            y_train (pl.DataFrame): Ground truths used for training
+            X_train (pl.DataFrame): Training features.
+            y_train (pl.DataFrame): Training labels.
 
         Returns:
-            OuterCVResults: Outer cross-validation results
+            OuterCVResults: Aggregated per-fold metrics, params, selected features,
+                run ids, and parent run id.
         """
         outer_cv_results = OuterCVResults()
         self._setup_mlflow()
