@@ -17,7 +17,7 @@ class OpenFETransformations:
         categorical_features: List[str],
         feature_boosting: bool,
         n_jobs: int,
-    ) -> Tuple[np.ndarray, np.ndarray, OpenFE]:
+    ) -> Tuple[np.ndarray, np.ndarray]:
         ofe = OpenFE()
         features = ofe.fit(
             data=X_train,
@@ -39,7 +39,7 @@ class OpenFETransformations:
             else:
                 column_wise_features.append(feature)
 
-        return row_wise_features, column_wise_features, ofe
+        return row_wise_features, column_wise_features
 
     def apply_openfe_features(
         self,

@@ -773,7 +773,7 @@ class ModelCVEvaluator:
 
                     if self.use_ofe and self.open_fe_transformations is not None:
                         self.logger.info(f"Fitting OpenFE on fold {i + 1}")
-                        row_wise_features, column_wise_features, ofe_object = (
+                        row_wise_features, column_wise_features = (
                             self.open_fe_transformations.fit(
                                 X_train=X_train_outer,
                                 y_train=y_train_outer,
@@ -803,7 +803,13 @@ class ModelCVEvaluator:
                         }
                         full_mapping = {**mapping, **column_wise_mapping}
 
-                        self._log_artifact(f"ofe_fold_{i}", ofe_object)
+                        self._log_artifact(
+                            f"ofe_row_wise_features_fold_{i}", row_wise_features
+                        )
+                        self._log_artifact(
+                            f"ofe_column_wise_features_fold_{i}",
+                            column_wise_features,
+                        )
                         self._log_artifact(
                             f"ofe_feature_mapping_fold_{i}", full_mapping
                         )

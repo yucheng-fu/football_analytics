@@ -10,6 +10,13 @@ import numpy as np
 import logging
 from model.data_classes import OuterCVResults
 from model.nested_cv_eval import ModelCVEvaluator
+from feature_engineering.OpenFE.utils import tree_to_formula
+from feature_engineering.OpenFE.FeatureGenerator import Node
+from utils.utils import plot_feature_importance
+from sklearn import clone
+from typing import List, Optional, Tuple
+import pandas as pd
+from optuna.integration import LightGBMPruningCallback
 
 
 class ModelParamTuner(ModelCVEvaluator):
@@ -51,53 +58,128 @@ class ModelParamTuner(ModelCVEvaluator):
 
         mlflow.log_figure(fig, artifact_file=f"{self.model_type}_loss_curve.png")
 
-    def fit_and_evaluate_model(
+    def _fit_model_and_select_features_with_loss_curve(
         self,
-        X_train: pl.DataFrame,
-        y_train: pl.DataFrame,
-        X_val: pl.DataFrame,
-        y_val: pl.DataFrame,
-        best_params: dict,
-        selected_features: np.ndarray,
-    ) -> LGBMClassifier:
-        """Fit final model using best hyerparameters and selected features
+        X_train: pd.DataFrame,
+        y_train: np.ndarray,
+        params: dict,
+        X_val: Optional[pd.DataFrame] = None,
+        y_val: Optional[np.ndarray] = None,
+        trial: Optional[optuna.trial.Trial] = None,
+        plot_loss_curve: bool = False,
+    ) -> Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index]]:
+        """Fit model with optional RFE and optional train/valid loss curve logging."""
+        fit_params = params.copy()
 
-        Args:
-            X_train (pl.DataFrame): Training set
-            y_train (pl.DataFrame): Training labels
-            X_val (pl.DataFrame): Validation set
-            y_val (pl.DataFrame): Validation labels
-            best_params (dict): Best hyperparameters found in the outer fold
-            selected_features (np.ndarray): Array of selected features from RFECV
-        Returns:
-            LGBMClassifier: Trained final model
-        """
-        self.logger.info("Fitting final model with best hyperparameters...")
-        final_model = self._fetch_model()
-        final_model.set_params(**best_params)
+        X_train_selected, X_val_selected, selected_features = (
+            self._get_selected_features(
+                X_train=X_train,
+                X_val=X_val,
+                y_train=y_train,
+                params=fit_params,
+            )
+        )
+
+        current_categories = X_train_selected.select_dtypes(
+            include=["category"]
+        ).columns.tolist()
+        category_schema = {
+            col: X_train_selected[col].cat.categories for col in current_categories
+        }
+
+        model = self._fetch_model()
+        model.set_params(**fit_params)
+
+        has_validation = X_val_selected is not None and y_val is not None
+        record_curve = plot_loss_curve and has_validation
+
+        callbacks = []
+        if trial is not None:
+            valid_name = "valid_1" if record_curve else "valid_0"
+            callbacks.append(
+                LightGBMPruningCallback(trial, "binary_logloss", valid_name=valid_name)
+            )
 
         results = {}
+        eval_set = None
+        eval_names = None
+        if has_validation:
+            if record_curve:
+                eval_set = [(X_train_selected, y_train), (X_val_selected, y_val)]
+                eval_names = ["train", "valid"]
+                callbacks.append(lgb.record_evaluation(results))
+            else:
+                eval_set = [(X_val_selected, y_val)]
 
-        if self.model_type == lightgbm_model_name:
-            final_model.fit(
-                X_train[selected_features],
-                y_train,
-                eval_set=[
-                    (X_train[selected_features], y_train),
-                    (X_val[selected_features], y_val),
-                ],
-                eval_names=["train", "valid"],
-                eval_metric="binary_logloss",
-                callbacks=[lgb.record_evaluation(results)],
-                categorical_feature=(self.categorical_columns if self.categorical_columns else ""),
+        model.fit(
+            X_train_selected,
+            y_train,
+            eval_set=eval_set,
+            eval_names=eval_names,
+            eval_metric="binary_logloss",
+            callbacks=callbacks if callbacks else None,
+            categorical_feature=current_categories if current_categories else "auto",
+        )
+
+        if record_curve and results:
+            train_loss = results.get("train", {}).get("binary_logloss")
+            valid_loss = results.get("valid", {}).get("binary_logloss")
+            if train_loss and valid_loss:
+                self.plot_loss_curve(train_loss, valid_loss)
+
+        return model, selected_features, category_schema
+
+    def _fit_final_model_with_loss_curve(
+        self,
+        X_train_outer: pd.DataFrame,
+        y_train_outer: np.ndarray,
+        best_params: dict,
+        open_fe_nodes: Optional[List[Node]] = None,
+        open_fe_feature_name_mapping: Optional[dict[str, str]] = None,
+        X_val_outer: Optional[pd.DataFrame] = None,
+        y_val_outer: Optional[np.ndarray] = None,
+        plot_loss_curve: bool = False,
+    ) -> Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index], Optional[object]]:
+        """Fit final model, optionally plotting train/valid loss curve when validation data is provided."""
+        self.logger.info("Fitting final model with best hyperparameters...")
+
+        X_train_outer_pd = self._apply_categorical_dtypes(X_train_outer)
+        X_val_outer_pd = (
+            self._apply_categorical_dtypes(X_val_outer)
+            if X_val_outer is not None
+            else None
+        )
+
+        column_transformer = None
+        if (
+            self.use_feature_engineering
+            and self.column_wise_transformations is not None
+        ):
+            column_transformer = clone(self.column_wise_transformations)
+            column_transformer.feature_name_mapping = open_fe_feature_name_mapping or {}
+            column_transformer.fit(X_train_outer_pd, feature_nodes=open_fe_nodes)
+            X_train_outer_pd = column_transformer.transform(X_train_outer_pd)
+            if X_val_outer_pd is not None:
+                X_val_outer_pd = column_transformer.transform(X_val_outer_pd)
+
+        final_model, selected_features, category_schema = (
+            self._fit_model_and_select_features_with_loss_curve(
+                X_train=X_train_outer_pd,
+                y_train=y_train_outer,
+                params=best_params,
+                X_val=X_val_outer_pd,
+                y_val=y_val_outer,
+                plot_loss_curve=plot_loss_curve,
             )
-            train_loss = results["train"]["binary_logloss"]
-            valid_loss = results["valid"]["binary_logloss"]
+        )
 
-        if train_loss and valid_loss:
-            self.plot_loss_curve(train_loss, valid_loss)
+        if self.log_feature_importance:
+            fig = plot_feature_importance(
+                X_train=X_train_outer_pd[selected_features], model=final_model
+            )
+            self._log_figure(name="feature_importance", fig=fig)
 
-        return final_model
+        return final_model, selected_features, category_schema, column_transformer
 
     def tune_and_train(self, X: pl.DataFrame, y: pl.DataFrame) -> OuterCVResults:
         """Tune and train on the entire X_train set. Use one-layer CV for hyperparameter optimisation.
@@ -110,9 +192,13 @@ class ModelParamTuner(ModelCVEvaluator):
             OuterCVResults: Outer cross-validation results
         """
         outer_cv_results = OuterCVResults()
-        self.setup_mlflow()
+        self._setup_mlflow()
 
-        X_train, X_val, y_train, y_val = train_test_split(X, y, test_size=0.2, stratify=y, random_state=42)
+        X_train, X_val, y_train, y_val = train_test_split(
+            X, y, test_size=0.2, stratify=y, random_state=42
+        )
+        column_wise_features: List[Node] = []
+        formula_to_safe_name: dict[str, str] = {}
 
         with mlflow.start_run(run_name=f"{self.run_name}_{self.model_type}") as run:
             parent_id = run.info.run_id
@@ -121,19 +207,72 @@ class ModelParamTuner(ModelCVEvaluator):
                 outer_fold_run_id=parent_id,
                 experiment_name=self.experiment_name,
             )
+            if self.use_ofe and self.open_fe_transformations is not None:
+                self.logger.info(f"Fitting OpenFE")
+                row_wise_features, column_wise_features = (
+                    self.open_fe_transformations.fit(
+                        X_train=X_train,
+                        y_train=y_train,
+                        task="classification",
+                        categorical_features=self.categorical_columns,
+                        feature_boosting=True,
+                        n_jobs=self.n_jobs,
+                    )
+                )
+
+                X_train, X_val, mapping = (
+                    self.open_fe_transformations.apply_openfe_features(
+                        X_train=X_train,
+                        X_val=X_val,
+                        features=row_wise_features,
+                        n_jobs=self.n_jobs,
+                    )
+                )
+
+                column_wise_mapping = {
+                    f"ofe_col_{idx + 1}": tree_to_formula(feature)
+                    for idx, feature in enumerate(column_wise_features)
+                }
+                formula_to_safe_name = {
+                    formula: safe_name
+                    for safe_name, formula in column_wise_mapping.items()
+                }
+                full_mapping = {**mapping, **column_wise_mapping}
+
+                self._log_artifact(f"ofe_row_wise_features", row_wise_features)
+                self._log_artifact(
+                    f"ofe_column_wise_features_fold",
+                    column_wise_features,
+                )
+                self._log_artifact(f"ofe_feature_mapping_fold", full_mapping)
+
+                for feat_name, formula in full_mapping.items():
+                    self.logger.info(f"Feature: {feat_name:20} | Formula: {formula}")
 
             # 1. Perform full hyperparamter tuning
             study, best_params = self._hyperparameter_tuning(
                 X_train_outer=X_train,
                 y_train_outer=y_train,
                 callback_fn=callback_fn,
+                open_fe_nodes=column_wise_features,
+                open_fe_feature_name_mapping=formula_to_safe_name,
             )
 
             # 2. Fit final model with best hyperparameters on the entire outer training fold
-            final_model, selected_features, category_schema = self._fit_model(
+            (
+                final_model,
+                selected_features,
+                category_schema,
+                column_transformer,
+            ) = self._fit_final_model_with_loss_curve(
                 X_train_outer=X_train,
                 y_train_outer=y_train,
                 best_params=best_params,
+                open_fe_nodes=column_wise_features,
+                open_fe_feature_name_mapping=formula_to_safe_name,
+                X_val_outer=X_val,
+                y_val_outer=y_val,
+                plot_loss_curve=True,
             )
 
             # 3. Evaluate final model on the outer validation fold and log final model to model registry
@@ -143,6 +282,7 @@ class ModelParamTuner(ModelCVEvaluator):
                 selected_features=selected_features,
                 final_model=final_model,
                 category_schema=category_schema,
+                column_transformer=column_transformer,
             )
 
             self._append_and_log_metrics_and_params(
