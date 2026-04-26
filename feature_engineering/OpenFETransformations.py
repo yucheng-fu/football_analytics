@@ -34,7 +34,7 @@ class OpenFETransformations:
         column_wise_features = []
 
         for feature in selected_features:
-            if feature.row_wise:
+            if feature.is_rowwise:
                 row_wise_features.append(feature)
             else:
                 column_wise_features.append(feature)

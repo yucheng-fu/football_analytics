@@ -1,4 +1,4 @@
-from typing import Callable, Tuple, Optional, Any
+from typing import Callable, Tuple, Optional, Any, List
 import tempfile
 import polars as pl
 import os
@@ -29,6 +29,8 @@ import pandas as pd
 from feature_engineering.ColumnTransformer import ColumnTransformer
 from feature_engineering.RowWiseTransformations import RowWiseTransformations
 from feature_engineering.OpenFETransformations import OpenFETransformations
+from feature_engineering.OpenFE.FeatureGenerator import Node
+from feature_engineering.OpenFE.utils import tree_to_formula
 
 
 class ModelCVEvaluator:
@@ -93,6 +95,14 @@ class ModelCVEvaluator:
         random.seed(self.seed)
 
     def _categorical_feature_names(self, X_pd: pd.DataFrame) -> list[str]:
+        """_summary_
+
+        Args:
+            X_pd (pd.DataFrame): _description_
+
+        Returns:
+            list[str]: _description_
+        """
         names: list[str] = []
         for col in self.categorical_columns:
             # If column in self.categorical_columns is string and in dataframe column, append to names
@@ -102,6 +112,14 @@ class ModelCVEvaluator:
         return names
 
     def _apply_categorical_dtypes(self, X_pd: pd.DataFrame) -> pd.DataFrame:
+        """_summary_
+
+        Args:
+            X_pd (pd.DataFrame): _description_
+
+        Returns:
+            pd.DataFrame: _description_
+        """
         X_pd_copy = X_pd.copy()
 
         # Ensure all text-like columns are categorical for LightGBM/RFE compatibility.
@@ -238,6 +256,12 @@ class ModelCVEvaluator:
         )
 
     def _log_artifact(self, name: str, object: Any) -> None:
+        """_summary_
+
+        Args:
+            name (str): _description_
+            object (Any): _description_
+        """
         with tempfile.TemporaryDirectory() as tmp_dir:
             tmp_file_path = os.path.join(tmp_dir, f"{name}.pkl")
 
@@ -250,6 +274,12 @@ class ModelCVEvaluator:
             )
 
     def _log_figure(self, name: str, fig: plt.figure):
+        """_summary_
+
+        Args:
+            name (str): _description_
+            fig (plt.figure): _description_
+        """
         mlflow.log_figure(fig, f"plots/{name}.png")
 
     def _append_and_log_metrics_and_params(
@@ -399,6 +429,17 @@ class ModelCVEvaluator:
         params: dict,
         X_val: Optional[pd.DataFrame] = None,
     ) -> Tuple[pd.DataFrame, pd.DataFrame, np.ndarray]:
+        """_summary_
+
+        Args:
+            X_train (pd.DataFrame): _description_
+            y_train (np.ndarray): _description_
+            params (dict): _description_
+            X_val (Optional[pd.DataFrame], optional): _description_. Defaults to None.
+
+        Returns:
+            Tuple[pd.DataFrame, pd.DataFrame, np.ndarray]: _description_
+        """
         if not self.use_feature_selection:
             selected_features = X_train.columns.to_list()
             return (X_train, X_val, selected_features)
@@ -422,6 +463,19 @@ class ModelCVEvaluator:
     def _get_feature_selector(
         self, fit_params: dict, n_features_to_select: float, transform: str = "pandas"
     ) -> RFE:
+        """_summary_
+
+        Args:
+            fit_params (dict): _description_
+            n_features_to_select (float): _description_
+            transform (str, optional): _description_. Defaults to "pandas".
+
+        Raises:
+            ValueError: _description_
+
+        Returns:
+            RFE: _description_
+        """
         if transform not in ["default", "pandas", "polars"]:
             raise ValueError(f"Invalid transform for RFE: {transform}")
 
@@ -438,6 +492,8 @@ class ModelCVEvaluator:
         trial: optuna.trial.Trial,
         X_train_outer: pd.DataFrame,
         y_train_outer: np.ndarray,
+        open_fe_nodes: Optional[List[Node]] = None,
+        open_fe_feature_name_mapping: Optional[dict[str, str]] = None,
     ) -> np.ndarray:
         """Objective function for Optuna hyperparameter tuning
 
@@ -468,7 +524,11 @@ class ModelCVEvaluator:
                 and self.column_wise_transformations is not None
             ):
                 column_transformer = clone(self.column_wise_transformations)
-                X_train_inner = column_transformer.fit_transform(X_train_inner)
+                column_transformer.feature_name_mapping = (
+                    open_fe_feature_name_mapping or {}
+                )
+                column_transformer.fit(X_train_inner, feature_nodes=open_fe_nodes)
+                X_train_inner = column_transformer.transform(X_train_inner)
                 X_val_inner = column_transformer.transform(X_val_inner)
 
             model, _, _ = self._fit_model_and_select_features(
@@ -480,7 +540,6 @@ class ModelCVEvaluator:
                 trial=trial,
             )
 
-            # Append loss of last iteration to inner_fold_scores
             inner_fold_scores.append(
                 model.evals_result_["valid_0"]["binary_logloss"][-1]
             )
@@ -494,6 +553,8 @@ class ModelCVEvaluator:
         X_train_outer: pd.DataFrame,
         y_train_outer: np.ndarray,
         callback_fn: Callable[[optuna.Study, optuna.trial.Trial], None],
+        open_fe_nodes: Optional[List[Node]] = None,
+        open_fe_feature_name_mapping: Optional[dict[str, str]] = None,
     ) -> Tuple[optuna.study.Study, dict]:
         """Function for performing hyperparameter tuning with optuna.
 
@@ -516,7 +577,13 @@ class ModelCVEvaluator:
         X_train_outer_pd = self._apply_categorical_dtypes(X_train_outer)
 
         study.optimize(
-            lambda trial: self._objective(trial, X_train_outer_pd, y_train_outer),
+            lambda trial: self._objective(
+                trial,
+                X_train_outer_pd,
+                y_train_outer,
+                open_fe_nodes=open_fe_nodes,
+                open_fe_feature_name_mapping=open_fe_feature_name_mapping,
+            ),
             n_trials=self.n_trials,
             n_jobs=self.n_jobs,
             show_progress_bar=True,
@@ -587,6 +654,8 @@ class ModelCVEvaluator:
         X_train_outer: pd.DataFrame,
         y_train_outer: np.ndarray,
         best_params: dict,
+        open_fe_nodes: Optional[List[Node]] = None,
+        open_fe_feature_name_mapping: Optional[dict[str, str]] = None,
     ) -> Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index]]:
         """Fit model using the best hyperparameters and selected features
 
@@ -611,7 +680,9 @@ class ModelCVEvaluator:
             and self.column_wise_transformations is not None
         ):
             column_transformer = clone(self.column_wise_transformations)
-            X_train_outer_pd = column_transformer.fit_transform(X_train_outer_pd)
+            column_transformer.feature_name_mapping = open_fe_feature_name_mapping or {}
+            column_transformer.fit(X_train_outer_pd, feature_nodes=open_fe_nodes)
+            X_train_outer_pd = column_transformer.transform(X_train_outer_pd)
 
         final_model, selected_features, category_schema = (
             self._fit_model_and_select_features(
@@ -661,6 +732,8 @@ class ModelCVEvaluator:
                 X_val_outer = X_train_pd.iloc[val_idx]
                 y_train_outer = y_train_np[train_idx]
                 y_val_outer = y_train_np[val_idx]
+                column_wise_features: List[Node] = []
+                formula_to_safe_name: dict[str, str] = {}
 
                 with mlflow.start_run(
                     nested=True, run_name=f"Outer_fold_{i + 1}"
@@ -697,10 +770,22 @@ class ModelCVEvaluator:
                             )
                         )
 
-                        self._log_artifact(f"ofe_fold_{i}", ofe_object)
-                        self._log_artifact(f"ofe_feature_mapping_fold_{i}", mapping)
+                        column_wise_mapping = {
+                            f"ofe_col_{idx + 1}": tree_to_formula(feature)
+                            for idx, feature in enumerate(column_wise_features)
+                        }
+                        formula_to_safe_name = {
+                            formula: safe_name
+                            for safe_name, formula in column_wise_mapping.items()
+                        }
+                        full_mapping = {**mapping, **column_wise_mapping}
 
-                        for feat_name, formula in mapping.items():
+                        self._log_artifact(f"ofe_fold_{i}", ofe_object)
+                        self._log_artifact(
+                            f"ofe_feature_mapping_fold_{i}", full_mapping
+                        )
+
+                        for feat_name, formula in full_mapping.items():
                             self.logger.info(
                                 f"Feature: {feat_name:20} | Formula: {formula}"
                             )
@@ -710,6 +795,8 @@ class ModelCVEvaluator:
                         X_train_outer=X_train_outer,
                         y_train_outer=y_train_outer,
                         callback_fn=callback_fn,
+                        open_fe_nodes=column_wise_features,
+                        open_fe_feature_name_mapping=formula_to_safe_name,
                     )
 
                     # 2. Fit final model with best hyperparameters on the entire outer training fold
@@ -722,6 +809,8 @@ class ModelCVEvaluator:
                         X_train_outer=X_train_outer,
                         y_train_outer=y_train_outer,
                         best_params=best_params,
+                        open_fe_nodes=column_wise_features,
+                        open_fe_feature_name_mapping=formula_to_safe_name,
                     )
 
                     # 3. Evaluate final model on the outer validaiton fold and log final model to model registry

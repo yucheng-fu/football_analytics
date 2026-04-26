@@ -2,7 +2,7 @@ from sklearn.base import BaseEstimator, TransformerMixin
 import pandas as pd
 import numpy as np
 from sklearn.preprocessing import OneHotEncoder
-from typing import List
+from typing import List, Optional
 from feature_engineering.OpenFE.FeatureGenerator import Node
 from feature_engineering.OpenFE.openfe import tree_to_formula
 
@@ -12,14 +12,18 @@ class ColumnTransformer(BaseEstimator, TransformerMixin):
         self,
         ohe_columns: list[str] | None = None,
         cat_columns: list[str] | None = None,
-        use_ofe_features: bool = False,
+        feature_name_mapping: Optional[dict[str, str]] = None,
     ):
         self.ohe_columns = ohe_columns or []
         self.cat_columns = cat_columns or []
+        self.feature_name_mapping = feature_name_mapping or {}
         # handle_unknown='ignore' is crucial for consistent nested CV
         self.encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
         self.feature_nodes = []
         self.mappings_ = {}
+
+    def _resolve_output_name(self, formula: str) -> str:
+        return self.feature_name_mapping.get(formula, formula)
 
     def fit(self, X: pd.DataFrame, y=None, feature_nodes: List[Node] | None = None):
 
@@ -28,26 +32,21 @@ class ColumnTransformer(BaseEstimator, TransformerMixin):
         for node in self.feature_nodes:
 
             formula = tree_to_formula(node)
-            # 1. Frequency Encoding
             if node.name == "freq":
                 col_data = node.children[0].calculate(X)
                 self.mappings_[formula] = col_data.value_counts()
 
-            # 2. GroupBy Aggregations (Mean, Std, Median, etc.)
             elif "GroupByThen" in node.name:
                 val_col = node.children[0].calculate(X)
                 key_col = node.children[1].calculate(X)
                 agg_func = node.name.replace("GroupByThen", "").lower()
                 self.mappings_[formula] = val_col.groupby(key_col).agg(agg_func)
-
-            # 3. Categorical Combinations
             elif node.name == "Combine":
                 d1 = node.children[0].calculate(X).astype(str)
                 d2 = node.children[1].calculate(X).astype(str)
                 temp = d1 + "_" + d2
                 temp[d1.isna() | d2.isna()] = np.nan
 
-                # Store Vocabulary: Pair String -> Integer ID
                 _, uniques = temp.factorize()
                 self.mappings_[formula] = {val: i for i, val in enumerate(uniques)}
 
@@ -61,7 +60,6 @@ class ColumnTransformer(BaseEstimator, TransformerMixin):
             node.delete()
 
         if self.ohe_columns:
-            # Fit only on the specified OHE columns
             self.encoder.fit(X[self.ohe_columns])
         return self
 
@@ -73,33 +71,35 @@ class ColumnTransformer(BaseEstimator, TransformerMixin):
         nodes = feature_nodes if feature_nodes is not None else self.feature_nodes
         for node in nodes:
             formula = tree_to_formula(node)
+            output_name = self._resolve_output_name(formula)
 
             if node.name == "freq":
                 source_col = node.children[0].calculate(X)
-                df[formula] = source_col.map(self.mappings_[formula]).astype(float)
+                df[output_name] = source_col.map(self.mappings_[formula]).astype(float)
 
             elif "GroupByThen" in node.name:
                 key_col = node.children[1].calculate(X)
-                df[formula] = key_col.map(self.mappings_[formula]).astype(float)
+                df[output_name] = key_col.map(self.mappings_[formula]).astype(float)
 
             elif node.name == "Combine":
                 d1 = node.children[0].calculate(X).astype(str)
                 d2 = node.children[1].calculate(X).astype(str)
                 temp = d1 + "_" + d2
                 temp[d1.isna() | d2.isna()] = np.nan
-                # Fill unknown pairs with -1 to match training set factorize
-                df[formula] = temp.map(self.mappings_[formula]).fillna(-1).astype(float)
+                df[output_name] = (
+                    temp.map(self.mappings_[formula]).fillna(-1).astype(float)
+                )
 
             elif node.name == "CombineThenFreq":
                 d1 = node.children[0].calculate(X).astype(str)
                 d2 = node.children[1].calculate(X).astype(str)
                 temp = d1 + "_" + d2
                 temp[d1.isna() | d2.isna()] = np.nan
-                df[formula] = temp.map(self.mappings_[formula]).astype(float)
+                df[output_name] = temp.map(self.mappings_[formula]).astype(float)
 
             node.delete()
 
-        # 1. Categorical handling (Native pandas categories)
+        # 1. Categorical handling
         for col in self.cat_columns:
             if col in df.columns:
                 df[col] = df[col].astype("category")
@@ -109,14 +109,12 @@ class ColumnTransformer(BaseEstimator, TransformerMixin):
             encoded_array = self.encoder.transform(df[self.ohe_columns])
             encoded_cols = self.encoder.get_feature_names_out(self.ohe_columns)
 
-            # Create a temporary DF for encoded features
             encoded_df = pd.DataFrame(
                 encoded_array,
                 columns=encoded_cols,
                 index=df.index,  # Critical to keep indices aligned
             )
 
-            # Combine and drop original OHE columns
             df = pd.concat([df, encoded_df], axis=1).drop(columns=self.ohe_columns)
 
         return df
