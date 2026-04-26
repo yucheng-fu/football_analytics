@@ -46,6 +46,7 @@ class ModelParamTuner(ModelCVEvaluator):
             train_loss (list): Training loss values
             valid_loss (list): Validation loss values
         """
+        plt.ioff()
         fig = plt.figure(figsize=(10, 6))
         epochs = range(1, len(train_loss) + 1)
         plt.plot(epochs, train_loss, "r", label="Training loss")
@@ -55,6 +56,8 @@ class ModelParamTuner(ModelCVEvaluator):
         plt.ylabel("Log Loss")
         plt.legend()
         plt.grid(True, linestyle="--", alpha=0.5)
+        plt.close(fig)
+        plt.ion()
 
         mlflow.log_figure(fig, artifact_file=f"{self.model_type}_loss_curve.png")
 
@@ -194,8 +197,15 @@ class ModelParamTuner(ModelCVEvaluator):
         outer_cv_results = OuterCVResults()
         self._setup_mlflow()
 
+        X_pd = X.to_pandas().copy()
+        y_np = y.to_numpy().ravel()
+
+        # Apply rowwise transformations to the entire dataset
+        if self.use_feature_engineering and self.row_wise_transformations is not None:
+            X_pd = self.row_wise_transformations.apply_row_wise_transformations(X_pd)
+
         X_train, X_val, y_train, y_val = train_test_split(
-            X, y, test_size=0.2, stratify=y, random_state=42
+            X_pd, y_np, test_size=0.2, stratify=y_np, random_state=42
         )
         column_wise_features: List[Node] = []
         formula_to_safe_name: dict[str, str] = {}
@@ -203,9 +213,13 @@ class ModelParamTuner(ModelCVEvaluator):
         with mlflow.start_run(run_name=f"{self.run_name}_{self.model_type}") as run:
             parent_id = run.info.run_id
             outer_cv_results.parent_run_id = parent_id
-            callback_fn = self._mlflow_callback(
-                outer_fold_run_id=parent_id,
-                experiment_name=self.experiment_name,
+            callback_fn = (
+                self._mlflow_callback(
+                    outer_fold_run_id=parent_id,
+                    experiment_name=self.experiment_name,
+                )
+                if self.log_hyperparameter_trials
+                else lambda study, trial: None
             )
             if self.use_ofe and self.open_fe_transformations is not None:
                 self.logger.info(f"Fitting OpenFE")
@@ -214,7 +228,7 @@ class ModelParamTuner(ModelCVEvaluator):
                         X_train=X_train,
                         y_train=y_train,
                         task="classification",
-                        categorical_features=self.categorical_columns,
+                        categorical_features=self._categorical_feature_names(X_train),
                         feature_boosting=True,
                         n_jobs=self.n_jobs,
                     )
