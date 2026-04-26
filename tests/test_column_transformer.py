@@ -40,7 +40,7 @@ def sample_data_with_second_category():
 def test_freq_transformation_maps_training_counts(sample_data):
     # Arrange
     train, test = sample_data
-    freq_node = Node(name="freq", children=[FNode("cat")])
+    freq_node = Node("freq", [FNode("cat")])
     nodes = [freq_node]
     auto_transformer = ColumnTransformer(cat_columns=["cat"])
 
@@ -60,7 +60,7 @@ def test_freq_transformation_maps_training_counts(sample_data):
 def test_groupby_then_mean_uses_training_aggregates(sample_data):
     # Arrange
     train, test = sample_data
-    mean_node = Node(name="GroupByThenMean", children=[FNode("val"), FNode("cat")])
+    mean_node = Node("GroupByThenMean", [FNode("val"), FNode("cat")])
     nodes = [mean_node]
     auto_transformer = ColumnTransformer(cat_columns=["cat"])
 
@@ -84,7 +84,7 @@ def test_combine_transformation_assigns_ids_and_marks_unknown_pairs(
 ):
     # Arrange
     train, test = sample_data_with_second_category
-    combine_node = Node(name="Combine", children=[FNode("cat"), FNode("cat2")])
+    combine_node = Node("Combine", [FNode("cat"), FNode("cat2")])
     nodes = [combine_node]
     auto_transformer = ColumnTransformer(cat_columns=["cat", "cat2"])
 
@@ -113,9 +113,7 @@ def test_combine_then_freq_maps_pair_frequency_from_training(
 ):
     # Arrange
     train, test = sample_data_with_second_category
-    combine_freq_node = Node(
-        name="CombineThenFreq", children=[FNode("cat"), FNode("cat2")]
-    )
+    combine_freq_node = Node("CombineThenFreq", [FNode("cat"), FNode("cat2")])
     nodes = [combine_freq_node]
     auto_transformer = ColumnTransformer(cat_columns=["cat", "cat2"])
 
