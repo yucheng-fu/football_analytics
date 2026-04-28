@@ -1,14 +1,30 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>D3 Arrow App</title>
+  <title>Tactical Pitch Designer</title>
+  <link rel="stylesheet" href="style.css">
   <script src="https://d3js.org/d3.v7.min.js"></script>
 </head>
 <body>
 
-<svg id="canvas" width="600" height="400"></svg>
+  <div id="app-container">
+    <div id="pitch-wrapper">
+      <svg id="canvas"></svg>
+    </div>
 
-<script src="script.js"></script>
+    <div id="sidebar">
+      <h3>Drawn Plays</h3>
+      <div id="menu-list"></div>
+      <div class="instruction">
+        <strong>Controls:</strong><br>
+        • Click 1: Set Start Point<br>
+        • Click 2: Set End Point<br>
+        • Click List: Highlight Arrow
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
 </body>
 </html>

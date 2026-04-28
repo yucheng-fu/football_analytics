@@ -1,0 +1,54 @@
+body {
+  margin: 0;
+  background: #f0f2f5;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 100vh;
+  font-family: sans-serif;
+}
+
+#app-container {
+  display: flex;
+  background: white;
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: 0 15px 35px rgba(0,0,0,0.1);
+  gap: 25px;
+}
+
+#canvas {
+  background: #fff;
+  border: 1px solid #ddd;
+  cursor: crosshair;
+}
+
+#sidebar {
+  width: 260px;
+  border-left: 1px solid #eee;
+  padding-left: 25px;
+}
+
+.menu-item {
+  padding: 12px;
+  background: #f8f9fa;
+  border: 1px solid #e9ecef;
+  margin-bottom: 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: 0.2s;
+}
+
+.menu-item.active {
+  border-color: #ff4444;
+  background: #fff5f5;
+  color: #ff4444;
+  font-weight: bold;
+}
+
+.instruction {
+  margin-top: 20px;
+  font-size: 13px;
+  color: #666;
+  line-height: 1.6;
+}
