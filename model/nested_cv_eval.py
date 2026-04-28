@@ -12,7 +12,7 @@ from sklearn import clone
 import optuna
 import matplotlib.pyplot as plt
 from utils.statics import lightgbm_model_name, tracking_uri
-from utils.utils import plot_feature_importance
+from utils.utils import plot_feature_importance, plot_calibration_curve
 import mlflow
 from mlflow.entities import Run
 from mlflow.models import infer_signature
@@ -428,6 +428,9 @@ class ModelCVEvaluator:
             X_data=X_val_outer_selected,
             output=y_pred_proba,
         )
+
+        fig = plot_calibration_curve(y_val_outer, y_pred_proba)
+        self._log_figure(name="calibration_curve", fig=fig)
 
         return outer_fold_log_loss
 

@@ -1,5 +1,8 @@
-from typing import Tuple, List
+from typing import Tuple, List, Optional
 from mlflow.entities import ViewType
+import os
+import pickle
+import tempfile
 
 import matplotlib.pyplot as plt
 import mplsoccer as mpl
@@ -14,6 +17,7 @@ from sklearn.mixture import GaussianMixture
 import polars as pl
 import seaborn as sns
 from sklearn.feature_selection import mutual_info_classif
+from sklearn.calibration import calibration_curve
 import mlflow
 from mlflow.tracking import MlflowClient
 from model.data_classes import LGBMParams, OuterCVResults
@@ -59,7 +63,9 @@ def build_cmap(x: Tuple[int, int, int], y: Tuple[int, int, int]) -> ListedColorm
     return ListedColormap(newcolors)
 
 
-def invert_orientation(x: np.array, y: np.array, PITCH_X: int, PITCH_Y: int) -> Tuple[np.array, np.array]:
+def invert_orientation(
+    x: np.array, y: np.array, PITCH_X: int, PITCH_Y: int
+) -> Tuple[np.array, np.array]:
     """Invert the orientation of the pitch coordinates.
 
     Args:
@@ -118,7 +124,8 @@ def add_legend(
         ]
     else:
         legend_elements = [
-            Patch(facecolor=colors[i], edgecolor="black", alpha=0.5, label=labels[i]) for i in range(num_elements)
+            Patch(facecolor=colors[i], edgecolor="black", alpha=0.5, label=labels[i])
+            for i in range(num_elements)
         ]
     ax.legend(handles=legend_elements, loc="upper right")
 
@@ -135,7 +142,9 @@ def plot_player_positions(
     fig_name: str,
 ) -> None:
     # Plot player positions
-    pitch.scatter(x, y, s=300, c=color, edgecolors="black", linewidth=1.5, ax=ax, zorder=3)
+    pitch.scatter(
+        x, y, s=300, c=color, edgecolors="black", linewidth=1.5, ax=ax, zorder=3
+    )
 
     # Add jersey numbers and player names
     for xi, yi, num, name in zip(x, y, jerseys, names):
@@ -219,7 +228,9 @@ def plot_pitch_with_shots(
     plt.show()
 
 
-def plot_gmm_components(gmm: GaussianMixture, ax: Axes, color: str, fig_name: str) -> None:
+def plot_gmm_components(
+    gmm: GaussianMixture, ax: Axes, color: str, fig_name: str
+) -> None:
     """Plot GMM components as ellipses on the pitch.
 
     Args:
@@ -270,13 +281,17 @@ def evaluate_and_plot_gmm_pdf(
 
     grid_points = np.column_stack([xx.ravel(), yy.ravel()])
 
-    for i, (mean, covariance, weight) in enumerate(zip(gmm.means_, gmm.covariances_, gmm.weights_)):
+    for i, (mean, covariance, weight) in enumerate(
+        zip(gmm.means_, gmm.covariances_, gmm.weights_)
+    ):
         pdf_values = multivariate_normal.pdf(grid_points, mean=mean, cov=covariance)
         density_components[:, :, i] = weight * pdf_values.reshape(xx.shape)
 
     total_density = density_components.sum(axis=-1)
 
-    ax.contourf(xx, yy, total_density, levels=10, cmap=cmap, alpha=0.8, antialiased=True)
+    ax.contourf(
+        xx, yy, total_density, levels=10, cmap=cmap, alpha=0.8, antialiased=True
+    )
     plt.title("GMM Probability Density Function (PDF) for possession-related events")
     plt.savefig(fig_name, dpi=300, bbox_inches="tight")
     plt.show()
@@ -291,9 +306,13 @@ def split_train_test(passes_df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFram
     Returns:
         tuple[pl.DataFrame, pl.DataFrame]: Train and test DataFrames
     """
-    train_df = passes_df.filter(pl.col("match_id") != france_argentina_match_id).drop(pl.col("match_id"))
+    train_df = passes_df.filter(pl.col("match_id") != france_argentina_match_id).drop(
+        pl.col("match_id")
+    )
 
-    test_df = passes_df.filter(pl.col("match_id") == france_argentina_match_id).drop(pl.col("match_id"))
+    test_df = passes_df.filter(pl.col("match_id") == france_argentina_match_id).drop(
+        pl.col("match_id")
+    )
 
     return train_df, test_df
 
@@ -326,14 +345,18 @@ def plot_numerical_feature_distributions(
     ax = ax.ravel()
 
     for i, column in enumerate(numerical_cols):
-        sns.histplot(train_df.select(column).to_series(), bins="auto", kde=True, ax=ax[i])
+        sns.histplot(
+            train_df.select(column).to_series(), bins="auto", kde=True, ax=ax[i]
+        )
         ax[i].set_title(f"Distribution of {column}")
         ax[i].set_xlabel(column)
         ax[i].set_ylabel("Frequency")
     plt.show()
 
 
-def plot_categorical_feature_distributions(train_df: pl.DataFrame, categorical_cols: List[str]) -> None:
+def plot_categorical_feature_distributions(
+    train_df: pl.DataFrame, categorical_cols: List[str]
+) -> None:
     """Plot categorical feature distributions
 
     Args:
@@ -358,7 +381,9 @@ def plot_categorical_feature_distributions(train_df: pl.DataFrame, categorical_c
     plt.show()
 
 
-def plot_single_feature_distribution(train_df: pl.DataFrame, col: str, bins: int | str = 30, kde: bool = True) -> None:
+def plot_single_feature_distribution(
+    train_df: pl.DataFrame, col: str, bins: int | str = 30, kde: bool = True
+) -> None:
     """Plot single feature distribution plot
 
     Args:
@@ -387,7 +412,9 @@ def plot_mutual_information(
         y_train (pl.DataFrame): Training labels
         discrete_features (List[bool] | str, optional): How to handle discrete features. Defaults to "auto".
     """
-    mi = mutual_info_classif(X_train, y_train, discrete_features=discrete_features, random_state=165)
+    mi = mutual_info_classif(
+        X_train, y_train, discrete_features=discrete_features, random_state=165
+    )
 
     mi_df = pl.DataFrame({"Feature": X_train.columns, "Mutual Information": mi})
     mi_df = mi_df.sort(by="Mutual Information", descending=True)
@@ -401,7 +428,9 @@ def plot_mutual_information(
     plt.show()
 
 
-def get_parent_run_id_from_experiment(result: OuterCVResults | None, experiment_id: str) -> str:
+def get_parent_run_id_from_experiment(
+    result: OuterCVResults | None, experiment_id: str
+) -> str:
     """Get parent run ID from experiment
 
     Args:
@@ -422,12 +451,16 @@ def get_parent_run_id_from_experiment(result: OuterCVResults | None, experiment_
             order_by=["attributes.start_time DESC"],
         )
 
-        parent_run_id = next(run.info.run_id for run in runs if "mlflow.parentRunId" not in run.data.tags)
+        parent_run_id = next(
+            run.info.run_id for run in runs if "mlflow.parentRunId" not in run.data.tags
+        )
 
     return parent_run_id
 
 
-def compute_generalisation_error_from_run_id_and_experiment_id(parent_run_id: str, experiment_id: str) -> None:
+def compute_generalisation_error_from_run_id_and_experiment_id(
+    parent_run_id: str, experiment_id: str
+) -> None:
     """Compute generalisation error from runs
 
     Args:
@@ -448,7 +481,9 @@ def compute_generalisation_error_from_run_id_and_experiment_id(parent_run_id: st
     std = np.std(loss, ddof=1)
 
     print(f"Number of outer folds: {len(loss)}")
-    print(f"95% confidence interval for best estimate of generalisation: {mean} ± {1.96 * std / np.sqrt(len(loss))}")
+    print(
+        f"95% confidence interval for best estimate of generalisation: {mean} ± {1.96 * std / np.sqrt(len(loss))}"
+    )
 
 
 def get_best_params_and_features_from_parent_run_id(
@@ -466,11 +501,98 @@ def get_best_params_and_features_from_parent_run_id(
     client = MlflowClient()
     parent_run = client.get_run(parent_run_id)
 
-    lgbm_params = LGBMParams(**parent_run.data.params)
-    best_params = lgbm_params.model_dump()
+    raw_params = parent_run.data.params
+    # Start with all raw_params (all MLflow-logged params, as strings)
+    best_params = dict(raw_params)
+    # Overwrite with validated/typed LGBMParams values for correct types
+    lgbm_params = LGBMParams(
+        **{k: raw_params[k] for k in LGBMParams.model_fields if k in raw_params}
+    )
+    best_params.update(lgbm_params.model_dump())
+
     best_features = np.array(parent_run.data.tags["selected_features"].split(","))
 
     return (best_params, best_features)
+
+
+def get_ofe_feature_nodes_from_run_id(
+    run_id: str,
+    row_artifact_name: Optional[str] = None,
+    column_artifact_name: Optional[str] = None,
+) -> Tuple[list, list]:
+    """Load row-wise and column-wise OpenFE feature-node pickles from a run.
+
+    Args:
+        run_id (str): MLflow run id.
+        row_artifact_name (Optional[str], optional): Explicit row-wise pickle name
+            under ``pickles/`` without ``.pkl`` extension. If None, auto-detects.
+        column_artifact_name (Optional[str], optional): Explicit column-wise pickle
+            name under ``pickles/`` without ``.pkl`` extension. If None, auto-detects.
+
+    Returns:
+        Tuple[list, list]: ``(row_wise_features, column_wise_features)``.
+
+    Raises:
+        ValueError: If required artifacts are not found for the provided run.
+    """
+
+    def _resolve_downloaded_pickle_path(local_path: str) -> str:
+        if os.path.isfile(local_path):
+            return local_path
+
+        if os.path.isdir(local_path):
+            pkl_files: list[str] = []
+            for root, _, files in os.walk(local_path):
+                for filename in files:
+                    if filename.endswith(".pkl"):
+                        pkl_files.append(os.path.join(root, filename))
+            if pkl_files:
+                return sorted(pkl_files)[0]
+
+        raise ValueError(
+            f"Could not resolve pickle file from downloaded path: {local_path}"
+        )
+
+    mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient()
+
+    artifacts = client.list_artifacts(run_id, path="pickles")
+    artifact_paths = [item.path for item in artifacts]
+
+    if row_artifact_name is None:
+        row_candidates = sorted(
+            [p for p in artifact_paths if "row_wise_features" in os.path.basename(p)]
+        )
+        if not row_candidates:
+            raise ValueError(f"No row-wise feature pickle found under run_id={run_id}")
+        row_artifact_path = row_candidates[-1]
+    else:
+        row_artifact_path = f"pickles/{row_artifact_name}.pkl"
+
+    if column_artifact_name is None:
+        column_candidates = sorted(
+            [p for p in artifact_paths if "column_wise_features" in os.path.basename(p)]
+        )
+        if not column_candidates:
+            raise ValueError(
+                f"No column-wise feature pickle found under run_id={run_id}"
+            )
+        column_artifact_path = column_candidates[-1]
+    else:
+        column_artifact_path = f"pickles/{column_artifact_name}.pkl"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        row_local = client.download_artifacts(run_id, row_artifact_path, tmp_dir)
+        col_local = client.download_artifacts(run_id, column_artifact_path, tmp_dir)
+        row_file = _resolve_downloaded_pickle_path(row_local)
+        col_file = _resolve_downloaded_pickle_path(col_local)
+
+        with open(row_file, "rb") as f:
+            row_wise_features = pickle.load(f)
+        with open(col_file, "rb") as f:
+            column_wise_features = pickle.load(f)
+
+    return row_wise_features, column_wise_features
 
 
 def get_registered_model(
@@ -511,6 +633,66 @@ def plot_feature_importance(X_train: pd.DataFrame, model: LGBMClassifier) -> plt
 
     shap.summary_plot(shap_values, X_train, plot_type="bar", show=False)
 
+    plt.close(fig)
+    plt.ion()
+
+    return fig
+
+
+def plot_loss_curve(
+    train_loss: list[float], valid_loss: list[float], model_type: str
+) -> plt.figure:
+    """Build a training-vs-validation loss curve figure.
+
+    Args:
+        train_loss (list[float]): Training loss values per boosting round.
+        valid_loss (list[float]): Validation loss values per boosting round.
+        model_type (str): Model name for the chart title.
+
+    Returns:
+        plt.figure: Matplotlib figure object.
+    """
+    plt.ioff()
+    fig, ax = plt.subplots(figsize=(10, 6))
+    epochs = range(1, len(train_loss) + 1)
+    ax.plot(epochs, train_loss, "r", label="Training loss")
+    ax.plot(epochs, valid_loss, "b", label="Validation loss")
+    ax.set_title(f"Training and Validation Loss - {model_type}")
+    ax.set_xlabel("Boosting Rounds")
+    ax.set_ylabel("Log Loss")
+    ax.legend()
+    ax.grid(True, linestyle="--", alpha=0.5)
+    plt.ion()
+
+    return fig
+
+
+def plot_calibration_curve(y_true: np.ndarray, y_pred_proba: np.ndarray) -> plt.Figure:
+    """Plot and return calibration curve figure.
+
+    Args:
+        y_true (np.ndarray): True binary labels.
+        y_pred_proba (np.ndarray): Predicted probabilities.
+
+    Returns:
+        plt.Figure: Matplotlib figure object.
+    """
+
+    prob_true, prob_pred = calibration_curve(
+        y_true, y_pred_proba, n_bins=10, strategy="uniform"
+    )
+
+    # Plot
+    plt.ioff()
+    fig, ax = plt.subplots(figsize=(8, 6))
+    ax.plot([0, 1], [0, 1], "k--", label="Perfectly calibrated")
+    ax.plot(prob_pred, prob_true, "s-", label="Model", linewidth=2, markersize=8)
+    ax.set_xlabel("Mean Predicted Probability")
+    ax.set_ylabel("Fraction of Positives")
+    ax.set_title("Calibration Curve")
+    ax.legend(loc="lower right")
+    ax.grid(True, alpha=0.3)
+    plt.tight_layout()
     plt.close(fig)
     plt.ion()
 

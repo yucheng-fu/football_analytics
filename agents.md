@@ -49,6 +49,7 @@ football_analytics/
 ### Code style 
 Follow the standards defined in the `pyproject.toml` file.
 
+Avoid writing unnecessary comments inline.
 
 ### Tests
 Unit tests are placed in `tests/` and the name convention is to use `test_` prefix.

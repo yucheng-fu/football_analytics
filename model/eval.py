@@ -13,14 +13,16 @@ from sklearn.metrics import (
     recall_score,
     f1_score,
 )
-from typing import Tuple
+from typing import Tuple, Optional
 from sklearn.metrics import log_loss
 import matplotlib.pyplot as plt
 
 
 class ModelEval:
     logger = logging.getLogger(__name__)
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
+    )
 
     def __init__(
         self,
@@ -29,12 +31,30 @@ class ModelEval:
         y_train: pl.DataFrame,
         best_features: np.ndarray,
         experiment_name: str,
+        row_wise_features: Optional[list] = None,
+        column_wise_features: Optional[list] = None,
+        feature_nodes: Optional[list] = None,
+        row_wise_transformations: Optional[object] = None,
+        categorical_columns: Optional[list] = None,
     ):
         self.model = model
         self.X_train = X_train
         self.y_train = y_train
         self.best_features = best_features
         self.experiment_name = experiment_name
+
+        self.row_wise_features = row_wise_features or []
+        self.column_wise_features = column_wise_features or []
+        # Backward compatibility: allow a single feature_nodes list.
+        if feature_nodes:
+            self.row_wise_features.extend(
+                [n for n in feature_nodes if getattr(n, "is_rowwise", False)]
+            )
+            self.column_wise_features.extend(
+                [n for n in feature_nodes if not getattr(n, "is_rowwise", False)]
+            )
+        self.row_wise_transformations = row_wise_transformations
+        self.categorical_columns = categorical_columns or []
 
     @property
     def model_type(self) -> str:
@@ -44,7 +64,9 @@ class ModelEval:
         """
         Sets up tracking uri and experiment for MLFlow
         """
-        self.logger.info(f"""Starting evaluation for {self.model_type} with the following configuration: """)
+        self.logger.info(
+            f"""Starting evaluation for {self.model_type} with the following configuration: """
+        )
 
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment_name=self.experiment_name)
@@ -102,10 +124,37 @@ class ModelEval:
         """Evaluate model on the test set"""
         self.setup_mlflow()
 
-        X_test = X_test.select(self.best_features).to_numpy()
-        X_train = self.X_train.select(self.best_features).to_numpy()
-        y_test = y_test.to_numpy().ravel()
-        y_train = self.y_train.to_numpy().ravel()
+        # Apply the same feature engineering pipeline as in training
+        X_test_pd = X_test.to_pandas().copy()
+        X_train_pd = self.X_train.to_pandas().copy()
+
+        # If row_wise_transformations exists, apply it
+        if (
+            hasattr(self, "row_wise_transformations")
+            and self.row_wise_transformations is not None
+        ):
+            X_test_pd = self.row_wise_transformations.apply_row_wise_transformations(
+                X_test_pd
+            )
+            X_train_pd = self.row_wise_transformations.apply_row_wise_transformations(
+                X_train_pd
+            )
+
+        # If _apply_feature_nodes exists, apply it
+        if hasattr(self, "_apply_feature_nodes"):
+            X_test_pd = self._apply_feature_nodes(X_test_pd)
+            X_train_pd = self._apply_feature_nodes(X_train_pd)
+
+        # If _apply_categorical_dtypes exists, apply it
+        if hasattr(self, "_apply_categorical_dtypes"):
+            X_test_pd = self._apply_categorical_dtypes(X_test_pd)
+            X_train_pd = self._apply_categorical_dtypes(X_train_pd)
+
+        # Select only the best features and convert to numpy
+        X_test_np = X_test_pd[self.best_features].to_numpy()
+        X_train_np = X_train_pd[self.best_features].to_numpy()
+        y_test_np = y_test.to_numpy().ravel()
+        y_train_np = self.y_train.to_numpy().ravel()
 
         with mlflow.start_run(run_name=self.model_type):
             # Probabilities and predictions
@@ -115,7 +164,9 @@ class ModelEval:
 
             # Metrics
             roc_auc, fpr, tpr, _ = self.compute_roc_curve(y_test, y_probs)
-            train_roc_auc, train_fpr, train_tpr, _ = self.compute_roc_curve(y_train, y_train_probs)
+            train_roc_auc, train_fpr, train_tpr, _ = self.compute_roc_curve(
+                y_train, y_train_probs
+            )
             acc = self.compute_accuracy(y_test, y_pred)
             precision = self.compute_precision(y_test, y_pred)
             recall = self.compute_recall(y_test, y_pred)
@@ -136,9 +187,13 @@ class ModelEval:
 
             # Plot ROC
             fig, ax = plt.subplots(figsize=(6, 6))
-            self.plot_auc_roc(ax, roc_auc, fpr, tpr, train_roc_auc, train_fpr, train_tpr)
+            self.plot_auc_roc(
+                ax, roc_auc, fpr, tpr, train_roc_auc, train_fpr, train_tpr
+            )
             mlflow.log_figure(fig, "roc_curve.png")
             plt.close(fig)
+
+            mlflow.set_tag("alias", "production")
 
             self.logger.info(
                 f"Test ROC AUC={roc_auc:.4f} | "
