@@ -3,8 +3,8 @@ import pandas as pd
 import numpy as np
 from sklearn.preprocessing import OneHotEncoder
 from typing import List, Optional
-from src.feature_engineering.OpenFE.FeatureGenerator import Node
-from src.feature_engineering.OpenFE.openfe import tree_to_formula
+from feature_engineering.OpenFE.FeatureGenerator import Node
+from feature_engineering.OpenFE.openfe import tree_to_formula
 
 
 class ColumnTransformer(BaseEstimator, TransformerMixin):

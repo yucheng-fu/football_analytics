@@ -6,7 +6,7 @@ import mlflow
 import mlflow.lightgbm
 from mlflow.tracking import MlflowClient
 import argparse
-from src.utils.statics import tracking_uri
+from utils.statics import tracking_uri
 
 
 def fetch_model(model_name: str, alias: str = "production"):

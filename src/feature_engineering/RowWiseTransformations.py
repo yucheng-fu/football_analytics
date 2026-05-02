@@ -1,8 +1,8 @@
 import pandas as pd
 import numpy as np
-from src.utils.statics import PITCH_X
-from src.feature_engineering.OpenFE.FeatureGenerator import Node
-from src.feature_engineering.OpenFE.openfe import tree_to_formula
+from utils.statics import PITCH_X
+from feature_engineering.OpenFE.FeatureGenerator import Node
+from feature_engineering.OpenFE.openfe import tree_to_formula
 from typing import List
 
 

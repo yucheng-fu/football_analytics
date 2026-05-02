@@ -20,13 +20,13 @@ from sklearn.feature_selection import mutual_info_classif
 from sklearn.calibration import calibration_curve
 import mlflow
 from mlflow.tracking import MlflowClient
-from src.model.data_classes import LGBMParams, OuterCVResults
+from model.data_classes import LGBMParams, OuterCVResults
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
-from src.feature_engineering.OpenFE.openfe import tree_to_formula
+from feature_engineering.OpenFE.openfe import tree_to_formula
 
 
-from src.utils.statics import (
+from utils.statics import (
     france_argentina_match_id,
     tracking_uri,
     lightgbm_model_name,

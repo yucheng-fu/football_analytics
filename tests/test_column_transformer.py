@@ -1,8 +1,8 @@
 import pytest
 import pandas as pd
 from pandas.testing import assert_frame_equal
-from src.feature_engineering.OpenFE.FeatureGenerator import FNode, Node
-from src.feature_engineering.ColumnTransformer import ColumnTransformer
+from feature_engineering.OpenFE.FeatureGenerator import FNode, Node
+from feature_engineering.ColumnTransformer import ColumnTransformer
 
 
 @pytest.fixture

@@ -10,12 +10,12 @@ from mlflow.models import infer_signature
 from mlflow.tracking import MlflowClient
 from sklearn.metrics import log_loss
 
-from src.feature_engineering.ColumnTransformer import ColumnTransformer
-from src.feature_engineering.OpenFE.FeatureGenerator import Node
-from src.feature_engineering.OpenFE.utils import tree_to_formula
-from src.feature_engineering.RowWiseTransformations import RowWiseTransformations
-from src.utils.statics import lightgbm_model_name, tracking_uri
-from src.utils.utils import safe_production_transform
+from feature_engineering.ColumnTransformer import ColumnTransformer
+from feature_engineering.OpenFE.FeatureGenerator import Node
+from feature_engineering.OpenFE.utils import tree_to_formula
+from feature_engineering.RowWiseTransformations import RowWiseTransformations
+from utils.statics import lightgbm_model_name, tracking_uri
+from utils.utils import safe_production_transform
 
 
 class ModelTrainer:

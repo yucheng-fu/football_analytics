@@ -11,8 +11,8 @@ from sklearn.metrics import log_loss
 from sklearn import clone
 import optuna
 import matplotlib.pyplot as plt
-from src.utils.statics import lightgbm_model_name, tracking_uri
-from src.utils.utils import plot_feature_importance, plot_calibration_curve
+from utils.statics import lightgbm_model_name, tracking_uri
+from utils.utils import plot_feature_importance, plot_calibration_curve
 import mlflow
 from mlflow.entities import Run
 from mlflow.models import infer_signature
@@ -20,16 +20,16 @@ from mlflow.tracking import MlflowClient
 from mlflow.utils.mlflow_tags import MLFLOW_PARENT_RUN_ID
 import numpy as np
 import logging
-from src.model.data_classes import OuterCVResults
+from model.data_classes import OuterCVResults
 from optuna.integration import LightGBMPruningCallback
 from optuna.visualization import plot_param_importances
 from lightgbm.callback import early_stopping
 import pandas as pd
-from src.feature_engineering.ColumnTransformer import ColumnTransformer
-from src.feature_engineering.RowWiseTransformations import RowWiseTransformations
-from src.feature_engineering.OpenFETransformations import OpenFETransformations
-from src.feature_engineering.OpenFE.FeatureGenerator import Node
-from src.feature_engineering.OpenFE.utils import tree_to_formula
+from feature_engineering.ColumnTransformer import ColumnTransformer
+from feature_engineering.RowWiseTransformations import RowWiseTransformations
+from feature_engineering.OpenFETransformations import OpenFETransformations
+from feature_engineering.OpenFE.FeatureGenerator import Node
+from feature_engineering.OpenFE.utils import tree_to_formula
 
 
 class ModelCVEvaluator:

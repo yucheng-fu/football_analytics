@@ -1,7 +1,7 @@
 import polars as pl
 import logging
 import mlflow
-from src.utils.statics import tracking_uri
+from utils.statics import tracking_uri
 import numpy as np
 from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier

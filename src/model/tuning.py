@@ -3,15 +3,15 @@ from lightgbm import LGBMClassifier
 import lightgbm as lgb
 from sklearn.model_selection import train_test_split
 import optuna
-from src.utils.statics import tracking_uri
+from utils.statics import tracking_uri
 import mlflow
 import numpy as np
 import logging
-from src.model.data_classes import OuterCVResults
-from src.model.nested_cv_eval import ModelCVEvaluator
-from src.feature_engineering.OpenFE.utils import tree_to_formula
-from src.feature_engineering.OpenFE.FeatureGenerator import Node
-from src.utils.utils import plot_feature_importance, plot_loss_curve
+from model.data_classes import OuterCVResults
+from model.nested_cv_eval import ModelCVEvaluator
+from feature_engineering.OpenFE.utils import tree_to_formula
+from feature_engineering.OpenFE.FeatureGenerator import Node
+from utils.utils import plot_feature_importance, plot_loss_curve
 from sklearn import clone
 from typing import List, Optional, Tuple
 import pandas as pd
