@@ -1,0 +1,14 @@
+artifact_uri: file:///c:/Users/Yucheng/Documents/DDSA/football_analytics/02-analysis/mlruns/0/ef5e9ef5afbf4f7799bd551640ae0bfa/artifacts
+end_time: 1762720565544
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: ef5e9ef5afbf4f7799bd551640ae0bfa
+run_name: redolent-horse-821
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1762720556825
+status: 3
+tags: []
+user_id: Yucheng

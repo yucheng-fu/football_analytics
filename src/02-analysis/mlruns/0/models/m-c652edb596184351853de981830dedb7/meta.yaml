@@ -1,0 +1,10 @@
+artifact_location: file:///c:/Users/Yucheng/Documents/DDSA/football_analytics/02-analysis/mlruns/0/models/m-c652edb596184351853de981830dedb7/artifacts
+creation_timestamp: 1762720446230
+experiment_id: '0'
+last_updated_timestamp: 1762720459015
+model_id: m-c652edb596184351853de981830dedb7
+model_type: null
+name: model
+source_run_id: 9ce620f3597f4cb9b6a98cc626730494
+status: 2
+status_message: null

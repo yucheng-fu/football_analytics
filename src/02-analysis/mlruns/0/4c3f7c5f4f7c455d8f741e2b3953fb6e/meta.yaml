@@ -1,0 +1,14 @@
+artifact_uri: file:///c:/Users/Yucheng/Documents/DDSA/football_analytics/02-analysis/mlruns/0/4c3f7c5f4f7c455d8f741e2b3953fb6e/artifacts
+end_time: 1762720548924
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 4c3f7c5f4f7c455d8f741e2b3953fb6e
+run_name: bedecked-hen-285
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1762720541559
+status: 3
+tags: []
+user_id: Yucheng
