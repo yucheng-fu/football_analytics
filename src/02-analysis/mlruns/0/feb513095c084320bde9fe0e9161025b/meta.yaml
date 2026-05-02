@@ -1,0 +1,14 @@
+artifact_uri: file:///c:/Users/Yucheng/Documents/DDSA/football_analytics/02-analysis/mlruns/0/feb513095c084320bde9fe0e9161025b/artifacts
+end_time: 1762720477155
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: feb513095c084320bde9fe0e9161025b
+run_name: agreeable-toad-843
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1762720467811
+status: 3
+tags: []
+user_id: Yucheng

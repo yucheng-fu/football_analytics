@@ -1,0 +1,14 @@
+artifact_uri: file:///c:/Users/Yucheng/Documents/DDSA/football_analytics/02-analysis/mlruns/0/1a49a1d85fe44fdaa94a79d480593a2d/artifacts
+end_time: 1762720485640
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 1a49a1d85fe44fdaa94a79d480593a2d
+run_name: likeable-dog-429
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1762720477205
+status: 3
+tags: []
+user_id: Yucheng

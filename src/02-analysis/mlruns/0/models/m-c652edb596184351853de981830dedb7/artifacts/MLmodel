@@ -1,0 +1,14 @@
+artifact_path: file:///c:/Users/Yucheng/Documents/DDSA/football_analytics/02-analysis/mlruns/0/models/m-c652edb596184351853de981830dedb7/artifacts
+flavors:
+  sklearn:
+    code: null
+    pickled_model: model.pkl
+    serialization_format: cloudpickle
+    sklearn_version: 1.5.0
+mlflow_version: 3.2.0
+model_id: m-c652edb596184351853de981830dedb7
+model_size_bytes: 226495
+model_uuid: m-c652edb596184351853de981830dedb7
+prompts: null
+run_id: 9ce620f3597f4cb9b6a98cc626730494
+utc_time_created: '2025-11-09 20:34:06.319314'

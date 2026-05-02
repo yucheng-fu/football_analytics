@@ -1,0 +1,14 @@
+artifact_uri: file:///c:/Users/Yucheng/Documents/DDSA/football_analytics/02-analysis/mlruns/0/4507c0e34f6548b7b0ac43a8294ae14e/artifacts
+end_time: 1762720515895
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 4507c0e34f6548b7b0ac43a8294ae14e
+run_name: judicious-auk-980
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1762720508997
+status: 3
+tags: []
+user_id: Yucheng

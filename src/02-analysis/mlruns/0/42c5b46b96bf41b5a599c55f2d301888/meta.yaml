@@ -1,0 +1,14 @@
+artifact_uri: file:///c:/Users/Yucheng/Documents/DDSA/football_analytics/02-analysis/mlruns/0/42c5b46b96bf41b5a599c55f2d301888/artifacts
+end_time: 1762720524556
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 42c5b46b96bf41b5a599c55f2d301888
+run_name: youthful-skink-997
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1762720516290
+status: 3
+tags: []
+user_id: Yucheng

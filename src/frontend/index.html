@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Tactical Pitch Designer</title>
+  <link rel="stylesheet" href="style.css">
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+</head>
+<body>
+
+  <div id="app-container">
+    <!-- Section 1: The Pitch -->
+    <div id="pitch-container">
+      <svg id="canvas"></svg>
+    </div>
+
+    <!-- Section 2: The List -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <h3>Drawn Plays</h3>
+      </div>
+      <div id="menu-list-wrapper">
+        <div id="menu-list"></div>
+      </div>
+      <div id="pagination-controls"></div>
+      <!-- New: Global Clear Button -->
+      <div class="sidebar-footer">
+        <button id="btn-clear-all" class="btn-danger-outline">Clear All Plays</button>
+      </div>
+    </aside>
+
+    <!-- Section 3: The Property Menu -->
+    <div id="edit-panel">
+      <div class="panel-header">
+        <h4>Properties</h4>
+        <button id="close-panel" onclick="activeId=null; render();">&times;</button>
+      </div>
+      
+      <div class="input-group">
+        <label>Height</label>
+        <select id="input-height">
+          <option value="Ground pass">Ground pass</option>
+          <option value="Low pass">Low pass</option>
+          <option value="High pass">High pass</option>
+        </select>
+      </div>
+
+      <div class="input-group">
+        <label>Body Part</label>
+        <select id="input-bodypart">
+          <option value="Right foot">Right foot</option>
+          <option value="Left foot">Left foot</option>
+          <option value="Head">Head</option>
+          <option value="Keeper arm">Keeper arm</option>
+          <option value="Drop kick">Drop kick</option>
+          <option value="Other">Other</option>
+        </select>
+      </div>
+
+      <div class="input-group checkbox-group">
+        <input type="checkbox" id="input-pressure">
+        <label for="input-pressure">Under Pressure</label>
+      </div>
+
+      <div class="input-group">
+        <div class="label-row">
+          <label>Duration</label>
+          <span id="duration-val">1.0</span>s
+        </div>
+        <input type="range" id="input-duration" min="0.5" max="10" step="0.1" value="1.0">
+      </div>
+
+      <!-- New: Delete Single Arrow Button -->
+      <div class="panel-footer">
+        <button id="btn-delete-active" class="btn-danger">Delete Pass</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

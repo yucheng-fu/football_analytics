@@ -1,0 +1,167 @@
+:root {
+  --primary: #ff4444;
+  --bg-pitch: #ffffff;
+  --bg-sidebar: #fcfcfd;
+  --border-color: #eef0f2;
+  --text-main: #2d3436;
+  --text-muted: #636e72;
+  --shadow: 0 10px 30px rgba(0,0,0,0.08);
+}
+
+body {
+  margin: 0;
+  background: #f0f2f5;
+  font-family: 'Segoe UI', Roboto, sans-serif;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  overflow: hidden;
+}
+
+#app-container {
+  display: flex;
+  background: white;
+  border-radius: 16px;
+  box-shadow: var(--shadow);
+  height: 600px;
+  transition: width 0.3s ease;
+}
+
+#pitch-container {
+  padding: 30px;
+  background: #fff;
+  display: flex;
+  align-items: center;
+}
+
+#canvas {
+  background: var(--bg-pitch);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  cursor: crosshair;
+}
+
+#sidebar {
+  width: 280px;
+  background: var(--bg-sidebar);
+  border-left: 1px solid var(--border-color);
+  display: flex;
+  flex-direction: column;
+}
+
+.sidebar-header {
+  padding: 20px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+#menu-list-wrapper {
+  flex: 1;
+  padding: 15px;
+  overflow-y: auto;
+  min-height: 0;
+}
+
+.menu-item {
+  padding: 12px 16px;
+  background: white;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  margin-bottom: 10px;
+  cursor: pointer;
+}
+
+.menu-item.active {
+  border-color: var(--primary);
+  background: #fff5f5;
+}
+
+#pagination-controls {
+  padding: 15px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  border-top: 1px solid var(--border-color);
+  background: white;
+}
+
+#pagination-controls button {
+  padding: 4px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: white;
+  cursor: pointer;
+}
+
+.sidebar-footer {
+  padding: 15px;
+  border-top: 1px solid var(--border-color);
+}
+
+#edit-panel {
+  width: 0;
+  opacity: 0;
+  overflow: hidden;
+  background: white;
+  border-left: 0 solid var(--border-color);
+  transition: width 0.3s ease, opacity 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  padding: 0;
+}
+
+#edit-panel.open {
+  width: 280px;
+  opacity: 1;
+  padding: 20px;
+  border-left-width: 1px;
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+#close-panel {
+  background: none;
+  border: none;
+  font-size: 24px;
+  cursor: pointer;
+}
+
+.input-group { margin-bottom: 15px; }
+.input-group label { display: block; font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; margin-bottom: 4px; }
+.input-group select { width: 100%; padding: 10px; border-radius: 6px; border: 1px solid var(--border-color); }
+.checkbox-group { display: flex; align-items: center; gap: 8px; }
+.checkbox-group label { margin: 0; text-transform: none; font-size: 14px; color: var(--text-main); }
+.label-row { display: flex; justify-content: space-between; }
+
+/* Button Styles */
+.btn-danger {
+  width: 100%;
+  padding: 12px;
+  background: var(--primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 10px;
+}
+
+.btn-danger-outline {
+  width: 100%;
+  padding: 10px;
+  background: transparent;
+  color: var(--primary);
+  border: 1px solid var(--primary);
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.btn-danger:hover { filter: brightness(0.9); }
+.btn-danger-outline:hover { background: #fff5f5; }

@@ -1,0 +1,14 @@
+artifact_uri: file:///c:/Users/Yucheng/Documents/DDSA/football_analytics/02-analysis/mlruns/0/72eef99cca894b119e9eeecc07ec5893/artifacts
+end_time: 1762720533225
+entry_point_name: ''
+experiment_id: '0'
+lifecycle_stage: active
+run_id: 72eef99cca894b119e9eeecc07ec5893
+run_name: clumsy-stag-290
+source_name: ''
+source_type: 4
+source_version: ''
+start_time: 1762720524730
+status: 3
+tags: []
+user_id: Yucheng
