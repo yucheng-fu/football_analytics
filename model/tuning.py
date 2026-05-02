@@ -49,7 +49,23 @@ class ModelParamTuner(ModelCVEvaluator):
         trial: Optional[optuna.trial.Trial] = None,
         should_plot_loss_curve: bool = False,
     ) -> Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index]]:
-        """Fit model with optional RFE and optional train/valid loss curve logging."""
+        """Fit model with optional feature selection, pruning, and loss-curve logging.
+
+        Args:
+            X_train (pd.DataFrame): Training features.
+            y_train (np.ndarray): 1D training labels.
+            params (dict): Model and optional selector parameters.
+            X_val (Optional[pd.DataFrame], optional): Validation features.
+            y_val (Optional[np.ndarray], optional): 1D validation labels.
+            trial (Optional[optuna.trial.Trial], optional): Optuna trial for pruning.
+            should_plot_loss_curve (bool, optional): If True and validation data is
+                provided, logs train/valid binary logloss curves to MLflow.
+
+        Returns:
+            Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index]]:
+                Fitted model, selected feature names, and categorical schema from
+                selected training columns.
+        """
         fit_params = params.copy()
 
         X_train_selected, X_val_selected, selected_features = (

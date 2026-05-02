@@ -678,6 +678,20 @@ def plot_calibration_curve(y_true: np.ndarray, y_pred_proba: np.ndarray) -> plt.
         plt.Figure: Matplotlib figure object.
     """
 
+    y_true = np.asarray(y_true).ravel()
+    y_pred_proba = np.asarray(y_pred_proba)
+    if y_pred_proba.ndim == 2:
+        if y_pred_proba.shape[1] == 2:
+            y_pred_proba = y_pred_proba[:, 1]
+        elif y_pred_proba.shape[1] == 1:
+            y_pred_proba = y_pred_proba.ravel()
+        else:
+            raise ValueError(
+                "y_pred_proba must be 1D or 2D with 1 or 2 columns for binary calibration."
+            )
+    else:
+        y_pred_proba = y_pred_proba.ravel()
+
     prob_true, prob_pred = calibration_curve(
         y_true, y_pred_proba, n_bins=10, strategy="uniform"
     )

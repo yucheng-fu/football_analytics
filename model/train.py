@@ -7,13 +7,15 @@ import pandas as pd
 import polars as pl
 from lightgbm import LGBMClassifier
 from mlflow.models import infer_signature
+from mlflow.tracking import MlflowClient
 from sklearn.metrics import log_loss
 
 from feature_engineering.ColumnTransformer import ColumnTransformer
 from feature_engineering.OpenFE.FeatureGenerator import Node
-from feature_engineering.OpenFE.utils import transform, tree_to_formula
+from feature_engineering.OpenFE.utils import tree_to_formula
 from feature_engineering.RowWiseTransformations import RowWiseTransformations
 from utils.statics import lightgbm_model_name, tracking_uri
+from utils.utils import safe_production_transform
 
 
 class ModelTrainer:
@@ -101,7 +103,6 @@ class ModelTrainer:
     ) -> None:
         """Log trained model to MLflow."""
         signature = infer_signature(X_data, output)
-        input_example = X_data.head(10)
 
         log_fn_mapping = {
             lightgbm_model_name: mlflow.lightgbm.log_model,
@@ -110,43 +111,48 @@ class ModelTrainer:
         if log_fn is None:
             raise ValueError(f"Unsupported model type: {self.model_type}")
 
-        log_fn(
-            final_model,
-            name=self.model_type,
-            signature=signature,
-            input_example=input_example,
+        log_fn(final_model, name=self.model_type, signature=signature)
+
+    def _apply_openfe_rowwise_nodes(self, X_pd: pd.DataFrame) -> pd.DataFrame:
+        """Apply OpenFE row-wise nodes to a single dataset."""
+        if not self.row_wise_features:
+            return X_pd
+        return safe_production_transform(X_pd, self.row_wise_features)
+
+    def _apply_openfe_columnwise_nodes(self, X_pd: pd.DataFrame) -> pd.DataFrame:
+        """Apply OpenFE column-wise nodes via fitted ColumnTransformer."""
+        if not self.column_wise_features:
+            return X_pd
+
+        formula_to_safe_name = {
+            tree_to_formula(node): f"ofe_col_{idx + 1}"
+            for idx, node in enumerate(self.column_wise_features)
+        }
+        column_transformer = ColumnTransformer(
+            feature_name_mapping=formula_to_safe_name
         )
+        column_transformer.fit(X_pd, feature_nodes=self.column_wise_features)
+        return column_transformer.transform(X_pd)
 
-    def _apply_feature_nodes(self, X_train_pd: pd.DataFrame) -> pd.DataFrame:
-        """Apply all OpenFE feature nodes to training data.
+    def _build_training_frame(self, X_train: pl.DataFrame) -> pd.DataFrame:
+        """Build final training dataframe with all feature engineering steps applied."""
+        X_pd = X_train.to_pandas().copy()
+        X_pd = self.row_wise_transformations.apply_row_wise_transformations(X_pd)
+        X_pd = self._apply_openfe_rowwise_nodes(X_pd)
+        X_pd = self._apply_openfe_columnwise_nodes(X_pd)
+        return self._apply_categorical_dtypes(X_pd)
 
-        Internally, stateful nodes still use ColumnTransformer logic while row-wise
-        nodes are expanded via OpenFE transform. This is a single trainer entrypoint.
-        """
-        if not self.row_wise_features and not self.column_wise_features:
-            return X_train_pd
+    def _add_legacy_openfe_aliases(self, X_pd: pd.DataFrame) -> pd.DataFrame:
+        """Add compatibility aliases for legacy OpenFE row-wise names (autoFE_f_*)."""
+        if not self.row_wise_features:
+            return X_pd
 
-        X_out = X_train_pd
-        if self.row_wise_features:
-            # OpenFE row-wise transform expects train/test together to keep naming consistent.
-            X_out, _ = transform(
-                X_train=X_out,
-                X_test=X_out.copy(),
-                new_features_list=self.row_wise_features,
-                n_jobs=1,
-            )
-
-        if self.column_wise_features:
-            formula_to_safe_name = {
-                tree_to_formula(node): f"ofe_col_{idx + 1}"
-                for idx, node in enumerate(self.column_wise_features)
-            }
-            column_transformer = ColumnTransformer(
-                feature_name_mapping=formula_to_safe_name
-            )
-            column_transformer.fit(X_out, feature_nodes=self.column_wise_features)
-            X_out = column_transformer.transform(X_out)
-
+        X_out = X_pd.copy()
+        for idx, node in enumerate(self.row_wise_features):
+            legacy_name = f"autoFE_f_{idx}"
+            formula_name = tree_to_formula(node)
+            if legacy_name not in X_out.columns and formula_name in X_out.columns:
+                X_out[legacy_name] = X_out[formula_name]
         return X_out
 
     def _categorical_feature_names(self, X_pd: pd.DataFrame) -> list[str]:
@@ -170,18 +176,49 @@ class ModelTrainer:
 
         return X_pd_copy
 
+    def _register_and_tag_model(self, run_id: str) -> None:
+        """Register model and set model-version metadata in MLflow registry."""
+        model_name = f"{self.experiment_name}_{self.model_type}"
+        registered_model = mlflow.register_model(
+            model_uri=f"runs:/{run_id}/{self.model_type}",
+            name=model_name,
+        )
+        client = MlflowClient()
+        client.set_model_version_tag(
+            name=model_name,
+            version=registered_model.version,
+            key="alias",
+            value="production",
+        )
+        client.set_registered_model_alias(
+            name=model_name,
+            alias="production",
+            version=registered_model.version,
+        )
+
+    def _log_training_run(
+        self,
+        model: LGBMClassifier,
+        X_train_final: pd.DataFrame,
+        y_pred_proba: np.ndarray,
+        y_train_np: np.ndarray,
+        run_id: str,
+    ) -> None:
+        """Log artifacts/metrics and register trained model."""
+        train_log_loss = log_loss(y_train_np, y_pred_proba)
+        self.log_model(final_model=model, X_data=X_train_final, output=y_pred_proba)
+        mlflow.log_params(self.params)
+        mlflow.set_tag("features", ",".join(map(str, self.features)))
+        mlflow.log_metric("train_loss", train_log_loss)
+        self._register_and_tag_model(run_id=run_id)
+
     def train(self, X_train: pl.DataFrame, y_train: pl.DataFrame) -> LGBMClassifier:
         """Train final model using params + row/column-wise OFE features + selected features."""
         self.setup_mlflow()
 
-        X_train_pd = X_train.to_pandas().copy()
+        X_train_pd = self._build_training_frame(X_train)
+        X_train_pd = self._add_legacy_openfe_aliases(X_train_pd)
         y_train_np = y_train.to_numpy().ravel()
-
-        X_train_pd = self.row_wise_transformations.apply_row_wise_transformations(
-            X_train_pd
-        )
-        X_train_pd = self._apply_feature_nodes(X_train_pd)
-        X_train_pd = self._apply_categorical_dtypes(X_train_pd)
 
         missing_features = [f for f in self.features if f not in X_train_pd.columns]
         if missing_features:
@@ -200,16 +237,12 @@ class ModelTrainer:
             )
 
             y_pred_proba = model.predict_proba(X_train_final)
-            train_log_loss = log_loss(y_train_np, y_pred_proba)
-
-            self.log_model(final_model=model, X_data=X_train_final, output=y_pred_proba)
-            mlflow.log_params(self.params)
-            mlflow.set_tag("features", ",".join(map(str, self.features)))
-            mlflow.log_metric("train_loss", train_log_loss)
-            mlflow.register_model(
-                model_uri=f"runs:/{run.info.run_id}/{self.model_type}",
-                name=f"{self.experiment_name}_{self.model_type}",
+            self._log_training_run(
+                model=model,
+                X_train_final=X_train_final,
+                y_pred_proba=y_pred_proba,
+                y_train_np=y_train_np,
+                run_id=run.info.run_id,
             )
-            mlflow.set_tag("alias", "production")
 
             return model

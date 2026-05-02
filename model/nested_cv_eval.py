@@ -57,6 +57,7 @@ class ModelCVEvaluator:
         log_hyperparameter_trials: bool = False,
         log_parameter_importance: bool = False,
         log_feature_importance: bool = False,
+        log_calibration_curve: bool = False,
         categorical_columns: list[str] | None = None,
         ohe_columns: list[str] | None = None,
     ):
@@ -76,6 +77,7 @@ class ModelCVEvaluator:
         self.log_hyperparameter_trials = log_hyperparameter_trials
         self.log_parameter_importance = log_parameter_importance
         self.log_feature_importance = log_feature_importance
+        self.log_calibration_curve = log_calibration_curve
         self.categorical_columns = (
             categorical_columns if categorical_columns is not None else []
         )
@@ -429,8 +431,9 @@ class ModelCVEvaluator:
             output=y_pred_proba,
         )
 
-        fig = plot_calibration_curve(y_val_outer, y_pred_proba)
-        self._log_figure(name="calibration_curve", fig=fig)
+        if self.log_calibration_curve:
+            fig = plot_calibration_curve(y_val_outer, y_pred_proba)
+            self._log_figure(name="calibration_curve", fig=fig)
 
         return outer_fold_log_loss
 
@@ -556,6 +559,7 @@ class ModelCVEvaluator:
                 X_val=X_val_inner,
                 y_val=y_val_inner,
                 trial=trial,
+                use_early_stopping=False,
             )
 
             inner_fold_scores.append(
@@ -629,6 +633,7 @@ class ModelCVEvaluator:
         X_val: Optional[pd.DataFrame] = None,
         y_val: Optional[np.ndarray] = None,
         trial: Optional[optuna.trial.Trial] = None,
+        use_early_stopping: bool = False,
     ) -> Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index]]:
         """Fit the model once, with optional RFE and optional validation eval set.
 
@@ -639,6 +644,7 @@ class ModelCVEvaluator:
             X_val (Optional[pd.DataFrame], optional): Validation features.
             y_val (Optional[np.ndarray], optional): Validation labels.
             trial (Optional[optuna.trial.Trial], optional): Trial for pruning callback.
+            use_early_stopping (bool, optional): Whether to use early stopping on the validation set.
 
         Returns:
             Tuple[LGBMClassifier, np.ndarray, dict[str, pd.Index]]: Fitted model,
@@ -672,7 +678,7 @@ class ModelCVEvaluator:
         if trial is not None:
             callbacks.append(LightGBMPruningCallback(trial, "binary_logloss"))
         has_validation = X_val_selected is not None and y_val is not None
-        if has_validation:
+        if has_validation and use_early_stopping:
             callbacks.append(early_stopping(stopping_rounds=50, verbose=False))
 
         eval_set = [(X_val_selected, y_val)] if has_validation else None
@@ -727,7 +733,10 @@ class ModelCVEvaluator:
 
         final_model, selected_features, category_schema = (
             self._fit_model_and_select_features(
-                X_train=X_train_outer_pd, y_train=y_train_outer, params=fit_params
+                X_train=X_train_outer_pd,
+                y_train=y_train_outer,
+                params=fit_params,
+                use_early_stopping=True,
             )
         )
 
@@ -839,7 +848,7 @@ class ModelCVEvaluator:
                             )
 
                     # 1. Perform full hyperparamter tuning
-                    _, best_params = self._hyperparameter_tuning(
+                    best_params = self._hyperparameter_tuning(
                         X_train_outer=X_train_outer,
                         y_train_outer=y_train_outer,
                         callback_fn=callback_fn,
