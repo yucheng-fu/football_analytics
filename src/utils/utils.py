@@ -713,6 +713,25 @@ def plot_calibration_curve(y_true: np.ndarray, y_pred_proba: np.ndarray) -> plt.
     return fig
 
 
+def fetch_model(model_name: str, alias: str = "production"):
+    """
+    Fetch a trained model from MLflow Model Registry via alias.
+
+    Args:
+        model_name (str): The name of the model to fetch.
+        alias (str): Registered model alias to resolve (default: "production").
+    """
+    mlflow.set_tracking_uri(tracking_uri)
+    mlflow_client = MlflowClient()
+    model_version_info = mlflow_client.get_model_version_by_alias(model_name, alias)
+    model_version = model_version_info.version
+    model_uri = f"models:/{model_name}@{alias}"
+    print(f"Loading model '{model_name}' alias '{alias}' (version {model_version})...")
+    model = mlflow.lightgbm.load_model(model_uri)
+    print(f"Loaded model from '{model_uri}'.")
+    return model
+
+
 def safe_production_transform(X_new, fitted_features_list):
     # Do NOT concat with X_train here.
     # The 'fitted_features_list' already knows the means/stats from training.

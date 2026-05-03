@@ -26,7 +26,7 @@ class ModelEval:
 
     def __init__(
         self,
-        model: XGBClassifier | LGBMClassifier,
+        model: LGBMClassifier,
         X_train: pl.DataFrame,
         y_train: pl.DataFrame,
         best_features: np.ndarray,

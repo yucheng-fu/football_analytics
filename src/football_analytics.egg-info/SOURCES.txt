@@ -33,4 +33,5 @@ src/utils/pitch_utils.py
 src/utils/preprocessing_handler.py
 src/utils/shots_handler.py
 src/utils/statics.py
+src/utils/utils.py
 tests/test_column_transformer.py
