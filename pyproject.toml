@@ -31,7 +31,8 @@ dependencies = [
     "optuna-integration[lightgbm]==4.5.0",
     "plotly==6.7.0",
     "shap==0.48.0",
-    "kaleido==1.2.0"
+    "kaleido==1.2.0",
+    "fastapi[standard]==0.115.6"
 ]
 
 [tool.setuptools]

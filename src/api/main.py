@@ -1,6 +1,21 @@
+from contextlib import asynccontextmanager
+
+import mlflow.pyfunc
 from fastapi import FastAPI
+
 from api.v1.router import api_router
 
-app = FastAPI()
+# @asynccontextmanager
+# async def lifespan(app: FastAPI):
+#     app.state.model = mlflow.pyfunc.load_model("./models")
+#     yield
+
+
+app = FastAPI(
+    title="Football Analytics Inference API",
+    description="Production-ready inference API for local MLflow model artifacts.",
+    version="1.0.0",
+    # lifespan=lifespan,
+)
 
 app.include_router(api_router, prefix="/api/v1")
