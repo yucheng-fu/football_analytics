@@ -1,20 +1,25 @@
-import polars as pl
 import logging
-import mlflow
-from utils.statics import tracking_uri
-import numpy as np
-from lightgbm import LGBMClassifier
-from sklearn.metrics import (
-    roc_auc_score,
-    roc_curve,
-    accuracy_score,
-    precision_score,
-    recall_score,
-    f1_score,
-)
-from typing import Tuple, Optional
-from sklearn.metrics import log_loss
+from typing import Optional
+
 import matplotlib.pyplot as plt
+import mlflow
+import numpy as np
+import pandas as pd
+import polars as pl
+from lightgbm import LGBMClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.metrics import f1_score
+from sklearn.metrics import log_loss
+from sklearn.metrics import precision_score
+from sklearn.metrics import recall_score
+from sklearn.metrics import roc_auc_score
+from sklearn.metrics import roc_curve
+
+from feature_engineering.ColumnTransformer import ColumnTransformer
+from feature_engineering.OpenFE.utils import tree_to_formula
+from feature_engineering.RowWiseTransformations import RowWiseTransformations
+from utils.statics import tracking_uri
+from utils.utils import safe_production_transform
 
 
 class ModelEval:
@@ -32,43 +37,123 @@ class ModelEval:
         experiment_name: str,
         row_wise_features: Optional[list] = None,
         column_wise_features: Optional[list] = None,
-        feature_nodes: Optional[list] = None,
-        row_wise_transformations: Optional[object] = None,
+        row_wise_transformations: Optional[RowWiseTransformations] = None,
         categorical_columns: Optional[list] = None,
+        categorical_mapping: Optional[dict[str, list]] = None,
     ):
         self.model = model
         self.X_train = X_train
         self.y_train = y_train
-        self.best_features = best_features
+        self.best_features = list(best_features)
         self.experiment_name = experiment_name
-
         self.row_wise_features = row_wise_features or []
         self.column_wise_features = column_wise_features or []
-        # Backward compatibility: allow a single feature_nodes list.
-        if feature_nodes:
-            self.row_wise_features.extend(
-                [n for n in feature_nodes if getattr(n, "is_rowwise", False)]
-            )
-            self.column_wise_features.extend(
-                [n for n in feature_nodes if not getattr(n, "is_rowwise", False)]
-            )
-        self.row_wise_transformations = row_wise_transformations
+        self.row_wise_transformations = (
+            row_wise_transformations
+            if row_wise_transformations is not None
+            else RowWiseTransformations()
+        )
         self.categorical_columns = categorical_columns or []
+        self.categorical_mapping = self._resolve_categorical_mapping(
+            categorical_mapping
+        )
 
     @property
     def model_type(self) -> str:
         return self.model.__class__.__name__
 
     def setup_mlflow(self) -> None:
-        """
-        Sets up tracking uri and experiment for MLFlow
-        """
+        """Set up MLflow tracking and experiment."""
         self.logger.info(
-            f"""Starting evaluation for {self.model_type} with the following configuration: """
+            f"Starting evaluation for {self.model_type} with the following configuration:"
         )
 
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment_name=self.experiment_name)
+
+    def _apply_openfe_rowwise_nodes(self, X_pd: pd.DataFrame) -> pd.DataFrame:
+        if not self.row_wise_features:
+            return X_pd
+        return safe_production_transform(X_pd, self.row_wise_features)
+
+    def _build_column_transformer(self) -> Optional[ColumnTransformer]:
+        if not self.column_wise_features:
+            return None
+        formula_to_safe_name = {
+            tree_to_formula(node): f"ofe_col_{idx + 1}"
+            for idx, node in enumerate(self.column_wise_features)
+        }
+        return ColumnTransformer(feature_name_mapping=formula_to_safe_name)
+
+    def _categorical_feature_names(self, X_pd: pd.DataFrame) -> list[str]:
+        """Return configured categorical column names that exist in ``X_pd``."""
+        names: list[str] = []
+        for col in self.categorical_columns:
+            if isinstance(col, str) and col in X_pd.columns:
+                names.append(col)
+        return names
+
+    def _apply_categorical_dtypes(self, X_pd: pd.DataFrame) -> pd.DataFrame:
+        """Return a copy of ``X_pd`` with categorical dtypes enforced."""
+        X_pd_copy = X_pd.copy()
+
+        object_like_cols = X_pd_copy.select_dtypes(include=["object", "string"]).columns
+        for name in object_like_cols:
+            X_pd_copy[name] = X_pd_copy[name].astype("category")
+
+        for name in self._categorical_feature_names(X_pd_copy):
+            X_pd_copy[name] = X_pd_copy[name].astype("category")
+
+        return X_pd_copy
+
+    def _add_legacy_openfe_aliases(self, X_pd: pd.DataFrame) -> pd.DataFrame:
+        if not self.row_wise_features:
+            return X_pd
+
+        X_out = X_pd.copy()
+        for idx, node in enumerate(self.row_wise_features):
+            legacy_name = f"autoFE_f_{idx}"
+            formula_name = tree_to_formula(node)
+            if legacy_name not in X_out.columns and formula_name in X_out.columns:
+                X_out[legacy_name] = X_out[formula_name]
+        return X_out
+
+    def _build_eval_frame(
+        self,
+        X_data: pl.DataFrame,
+        column_transformer: Optional[ColumnTransformer] = None,
+        fit_column_transformer: bool = False,
+    ) -> pd.DataFrame:
+        X_pd = X_data.to_pandas().copy()
+        X_pd = self.row_wise_transformations.apply_row_wise_transformations(X_pd)
+        X_pd = self._apply_openfe_rowwise_nodes(X_pd)
+        if column_transformer is not None:
+            if fit_column_transformer:
+                column_transformer.fit(X_pd, feature_nodes=self.column_wise_features)
+            X_pd = column_transformer.transform(X_pd)
+        X_pd = self._add_legacy_openfe_aliases(X_pd)
+        return self._apply_categorical_dtypes(X_pd)
+
+    def _resolve_categorical_mapping(
+        self, categorical_mapping: Optional[dict[str, list]]
+    ) -> dict[str, list]:
+        """Resolve categorical mapping from explicit input, then model attribute."""
+        if isinstance(categorical_mapping, dict):
+            return categorical_mapping
+        mapping = getattr(self.model, "categorical_mapping_", None)
+        if isinstance(mapping, dict):
+            return mapping
+        return {}
+
+    def _apply_saved_categorical_mapping(self, X_pd: pd.DataFrame) -> pd.DataFrame:
+        """Apply saved training categorical mapping for production-safe inference."""
+        if not self.categorical_mapping:
+            return X_pd
+        X_out = X_pd.copy()
+        for col, categories in self.categorical_mapping.items():
+            if col in X_out.columns:
+                X_out[col] = pd.Categorical(X_out[col], categories=categories)
+        return X_out
 
     def plot_auc_roc(
         self,
@@ -76,11 +161,10 @@ class ModelEval:
         roc_auc: float,
         fpr: np.ndarray,
         tpr: np.ndarray,
-        train_roc_auc: np.ndarray,
+        train_roc_auc: float,
         train_fpr: np.ndarray,
         train_tpr: np.ndarray,
     ) -> None:
-        # Plot test ROC
         ax.plot(fpr, tpr, label=f"Test ROC AUC = {roc_auc:.4f}", color="C1")
         ax.plot(
             train_fpr,
@@ -95,84 +179,50 @@ class ModelEval:
         ax.set_title("ROC Curve")
         ax.legend(loc="lower right")
 
-    def compute_roc_curve(self, y: pl.DataFrame, y_probs: pl.DataFrame) -> Tuple:
-        roc_auc = roc_auc_score(y, y_probs)
-
-        fpr, tpr, threshold = roc_curve(y, y_probs)
-
-        return roc_auc, fpr, tpr, threshold
-
-    def compute_accuracy(self, y: pl.DataFrame, y_pred: pl.DataFrame) -> float:
-        return accuracy_score(y, y_pred)
-
-    def compute_precision(self, y: pl.DataFrame, y_pred: pl.DataFrame):
-        return precision_score(y, y_pred)
-
-    def compute_recall(self, y: pl.DataFrame, y_pred: pl.DataFrame):
-        return recall_score(y, y_pred)
-
-    def compute_f1_score(self, y: pl.DataFrame, y_pred: pl.DataFrame):
-        return f1_score(y, y_pred)
-
-    def compute_log_loss(self, y: pl.DataFrame, y_probs: pl.DataFrame) -> float:
-        y_arr = np.ravel(y)
-        probs = np.ravel(y_probs)
-        return float(log_loss(y_arr, probs))
-
     def eval(self, X_test: pl.DataFrame, y_test: pl.DataFrame) -> None:
-        """Evaluate model on the test set"""
+        """Evaluate model on the test set."""
         self.setup_mlflow()
 
-        # Apply the same feature engineering pipeline as in training
-        X_test_pd = X_test.to_pandas().copy()
-        X_train_pd = self.X_train.to_pandas().copy()
-
-        # If row_wise_transformations exists, apply it
-        if (
-            hasattr(self, "row_wise_transformations")
-            and self.row_wise_transformations is not None
-        ):
-            X_test_pd = self.row_wise_transformations.apply_row_wise_transformations(
-                X_test_pd
-            )
-            X_train_pd = self.row_wise_transformations.apply_row_wise_transformations(
-                X_train_pd
-            )
-
-        # If _apply_feature_nodes exists, apply it
-        if hasattr(self, "_apply_feature_nodes"):
-            X_test_pd = self._apply_feature_nodes(X_test_pd)
-            X_train_pd = self._apply_feature_nodes(X_train_pd)
-
-        # If _apply_categorical_dtypes exists, apply it
-        if hasattr(self, "_apply_categorical_dtypes"):
-            X_test_pd = self._apply_categorical_dtypes(X_test_pd)
-            X_train_pd = self._apply_categorical_dtypes(X_train_pd)
-
-        # Select only the best features and convert to numpy
-        X_test_np = X_test_pd[self.best_features].to_numpy()
-        X_train_np = X_train_pd[self.best_features].to_numpy()
+        column_transformer = self._build_column_transformer()
+        X_train_pd = self._build_eval_frame(
+            self.X_train,
+            column_transformer=column_transformer,
+            fit_column_transformer=True,
+        )
+        X_test_pd = self._build_eval_frame(
+            X_test,
+            column_transformer=column_transformer,
+            fit_column_transformer=False,
+        )
         y_test_np = y_test.to_numpy().ravel()
         y_train_np = self.y_train.to_numpy().ravel()
 
+        missing_features = [f for f in self.best_features if f not in X_test_pd.columns]
+        if missing_features:
+            raise ValueError(
+                f"Missing selected features after transformations: {missing_features}"
+            )
+
+        X_test_final = X_test_pd[self.best_features]
+        X_train_final = X_train_pd[self.best_features]
+        X_test_final = self._apply_saved_categorical_mapping(X_test_final)
+        X_train_final = self._apply_saved_categorical_mapping(X_train_final)
+
         with mlflow.start_run(run_name=self.model_type):
-            # Probabilities and predictions
-            y_probs = self.model.predict_proba(X_test)[:, 1]
-            y_train_probs = self.model.predict_proba(X_train)[:, 1]
+            y_probs = self.model.predict_proba(X_test_final)[:, 1]
+            y_train_probs = self.model.predict_proba(X_train_final)[:, 1]
             y_pred = (y_probs >= 0.5).astype(int)
 
-            # Metrics
-            roc_auc, fpr, tpr, _ = self.compute_roc_curve(y_test, y_probs)
-            train_roc_auc, train_fpr, train_tpr, _ = self.compute_roc_curve(
-                y_train, y_train_probs
-            )
-            acc = self.compute_accuracy(y_test, y_pred)
-            precision = self.compute_precision(y_test, y_pred)
-            recall = self.compute_recall(y_test, y_pred)
-            f1 = self.compute_f1_score(y_test, y_pred)
-            logloss = self.compute_log_loss(y_test, y_probs)
+            roc_auc = roc_auc_score(y_test_np, y_probs)
+            fpr, tpr, _ = roc_curve(y_test_np, y_probs)
+            train_roc_auc = roc_auc_score(y_train_np, y_train_probs)
+            train_fpr, train_tpr, _ = roc_curve(y_train_np, y_train_probs)
+            acc = accuracy_score(y_test_np, y_pred)
+            precision = precision_score(y_test_np, y_pred)
+            recall = recall_score(y_test_np, y_pred)
+            f1 = f1_score(y_test_np, y_pred)
+            logloss = float(log_loss(y_test_np, y_probs))
 
-            # Log metrics
             mlflow.log_metrics(
                 {
                     "roc_auc": roc_auc,
@@ -184,7 +234,6 @@ class ModelEval:
                 }
             )
 
-            # Plot ROC
             fig, ax = plt.subplots(figsize=(6, 6))
             self.plot_auc_roc(
                 ax, roc_auc, fpr, tpr, train_roc_auc, train_fpr, train_tpr

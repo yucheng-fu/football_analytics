@@ -1,8 +1,9 @@
-from typing import Tuple, List, Optional
-from mlflow.entities import ViewType
+import json
 import os
 import pickle
 import tempfile
+from typing import Tuple, List, Optional
+from mlflow.entities import ViewType
 
 import matplotlib.pyplot as plt
 import mplsoccer as mpl
@@ -731,6 +732,83 @@ def fetch_model(model_name: str, alias: str = "production"):
     return model
 
 
+def fetch_latest_model_artifact(experiment_id: str, run_id: str | None = None):
+    """
+    Fetch latest LightGBM model artifact from MLflow using experiment/run context.
+
+    Args:
+        experiment_id (str): MLflow experiment id.
+        run_id (str | None): Specific run id. If None, uses the latest run in experiment.
+    """
+    mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient()
+
+    resolved_run_id = run_id
+    if resolved_run_id is None:
+        runs = mlflow.search_runs(
+            experiment_ids=[experiment_id],
+            order_by=["start_time DESC"],
+            max_results=1,
+        )
+        if runs.empty:
+            raise ValueError(f"No runs found for experiment_id={experiment_id}.")
+        resolved_run_id = runs.iloc[0]["run_id"]
+
+    run = client.get_run(resolved_run_id)
+    if run.info.experiment_id != str(experiment_id):
+        raise ValueError(
+            f"run_id={resolved_run_id} does not belong to experiment_id={experiment_id}."
+        )
+
+    model_history = run.data.tags.get("mlflow.log-model.history")
+    if model_history:
+        history = json.loads(model_history)
+        artifact_path = history[-1]["artifact_path"]
+    else:
+        root_artifacts = client.list_artifacts(resolved_run_id)
+        artifact_path = None
+        for artifact in root_artifacts:
+            if artifact.is_dir:
+                nested = client.list_artifacts(resolved_run_id, artifact.path)
+                if any(item.path.endswith("MLmodel") for item in nested):
+                    artifact_path = artifact.path
+                    break
+        if artifact_path is None:
+            raise ValueError(
+                f"No model artifact found for run_id={resolved_run_id} in experiment_id={experiment_id}."
+            )
+
+    model_uri = f"runs:/{resolved_run_id}/{artifact_path}"
+    print(
+        f"Loading latest model artifact from run '{resolved_run_id}' (experiment '{experiment_id}') at '{artifact_path}'..."
+    )
+    model = mlflow.lightgbm.load_model(model_uri)
+    print(f"Loaded model from '{model_uri}'.")
+    return model
+
+
+def fetch_categorical_mapping_by_run_id(run_id: str) -> dict[str, list]:
+    """
+    Fetch saved categorical mapping from MLflow run tags.
+
+    Args:
+        run_id (str): MLflow run id containing `categorical_mapping` tag.
+    """
+    mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient()
+    run = client.get_run(run_id)
+    mapping_raw = run.data.tags.get("categorical_mapping")
+    if not mapping_raw:
+        raise ValueError(f"No categorical_mapping tag found for run_id={run_id}.")
+    try:
+        mapping = json.loads(mapping_raw)
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            f"Invalid categorical_mapping JSON for run_id={run_id}."
+        ) from exc
+    if not isinstance(mapping, dict):
+        raise ValueError(f"categorical_mapping tag is not a dict for run_id={run_id}.")
+    return mapping
 
 
 def safe_production_transform(X_new, fitted_features_list):

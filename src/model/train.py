@@ -1,4 +1,5 @@
 import logging
+import json
 from typing import List, Optional
 
 import mlflow
@@ -31,7 +32,6 @@ class ModelTrainer:
         features: List[str],
         row_wise_features: Optional[List[Node]] = None,
         column_wise_features: Optional[List[Node]] = None,
-        feature_nodes: Optional[List[Node]] = None,
         row_wise_transformations: Optional[RowWiseTransformations] = None,
         categorical_columns: Optional[List[str]] = None,
         run_name: str = "baseline_training",
@@ -42,12 +42,6 @@ class ModelTrainer:
         self.features = features
         self.row_wise_features = row_wise_features or []
         self.column_wise_features = column_wise_features or []
-        # Backward compatibility: allow a single feature_nodes list.
-        if feature_nodes:
-            self.row_wise_features.extend([n for n in feature_nodes if n.is_rowwise])
-            self.column_wise_features.extend(
-                [n for n in feature_nodes if not n.is_rowwise]
-            )
         self.row_wise_transformations = (
             row_wise_transformations
             if row_wise_transformations is not None
@@ -176,6 +170,14 @@ class ModelTrainer:
 
         return X_pd_copy
 
+    def _build_categorical_mapping(self, X_pd: pd.DataFrame) -> dict[str, list]:
+        """Build categorical mapping from dataframe categorical columns."""
+        mapping: dict[str, list] = {}
+        for col in X_pd.columns:
+            if pd.api.types.is_categorical_dtype(X_pd[col]):
+                mapping[col] = X_pd[col].cat.categories.tolist()
+        return mapping
+
     def _register_and_tag_model(self, run_id: str) -> None:
         """Register model and set model-version metadata in MLflow registry."""
         model_name = f"{self.experiment_name}_{self.model_type}"
@@ -203,12 +205,14 @@ class ModelTrainer:
         y_pred_proba: np.ndarray,
         y_train_np: np.ndarray,
         run_id: str,
+        categorical_mapping: dict[str, list],
     ) -> None:
         """Log artifacts/metrics and register trained model."""
         train_log_loss = log_loss(y_train_np, y_pred_proba)
         self.log_model(final_model=model, X_data=X_train_final, output=y_pred_proba)
         mlflow.log_params(self.params)
         mlflow.set_tag("features", ",".join(map(str, self.features)))
+        mlflow.set_tag("categorical_mapping", json.dumps(categorical_mapping))
         mlflow.log_metric("train_loss", train_log_loss)
         self._register_and_tag_model(run_id=run_id)
 
@@ -227,6 +231,7 @@ class ModelTrainer:
             )
 
         X_train_final = X_train_pd[self.features]
+        categorical_mapping = self._build_categorical_mapping(X_train_final)
 
         with mlflow.start_run(run_name=f"{self.run_name}_{self.model_type}") as run:
             model = self.fetch_model()
@@ -235,6 +240,7 @@ class ModelTrainer:
             model.fit(
                 X_train_final, y_train_np, feature_name=list(X_train_final.columns)
             )
+            setattr(model, "categorical_mapping_", categorical_mapping)
 
             y_pred_proba = model.predict_proba(X_train_final)
             self._log_training_run(
@@ -243,6 +249,7 @@ class ModelTrainer:
                 y_pred_proba=y_pred_proba,
                 y_train_np=y_train_np,
                 run_id=run.info.run_id,
+                categorical_mapping=categorical_mapping,
             )
 
             return model
