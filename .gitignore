@@ -20,8 +20,11 @@ env/
 Thumbs.db
 
 # MLflow / experiment outputs
-02-analysis/mlruns/
+/src/02-analysis/mlruns/
 
 # OFE
-02-analysis/*.feather
+/src/02-analysis/*.feather
 *.feather
+
+# setuptools
+/src/*.egg-info/
