@@ -3,7 +3,6 @@ import logging
 import mlflow
 from utils.statics import tracking_uri
 import numpy as np
-from xgboost import XGBClassifier
 from lightgbm import LGBMClassifier
 from sklearn.metrics import (
     roc_auc_score,

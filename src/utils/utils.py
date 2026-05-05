@@ -22,7 +22,6 @@ import mlflow
 from mlflow.tracking import MlflowClient
 from model.data_classes import LGBMParams, OuterCVResults
 from lightgbm import LGBMClassifier
-from xgboost import XGBClassifier
 from feature_engineering.OpenFE.openfe import tree_to_formula
 
 
@@ -597,7 +596,7 @@ def get_ofe_feature_nodes_from_run_id(
 
 def get_registered_model(
     model_type: str, model_registry_name: str, version: str = "latest"
-) -> XGBClassifier | LGBMClassifier:
+) -> LGBMClassifier:
     """Get registered model from MLFlow
 
     Args:
@@ -609,7 +608,7 @@ def get_registered_model(
         ValueError: If the model type is unsupported
 
     Returns:
-        XGBClassifier | LGBMClassifier: Trained model
+        LGBMClassifier: Trained model
     """
     log_fn_mapping = {
         xgboost_model_name: mlflow.xgboost.load_model,
@@ -730,6 +729,8 @@ def fetch_model(model_name: str, alias: str = "production"):
     model = mlflow.lightgbm.load_model(model_uri)
     print(f"Loaded model from '{model_uri}'.")
     return model
+
+
 
 
 def safe_production_transform(X_new, fitted_features_list):
