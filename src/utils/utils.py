@@ -734,62 +734,6 @@ def fetch_model(model_name: str, alias: str = "production"):
     print(f"Loaded model from '{model_uri}'.")
     return model
 
-
-def fetch_latest_model_artifact(experiment_id: str, run_id: str | None = None):
-    """
-    Fetch latest LightGBM model artifact from MLflow using experiment/run context.
-
-    Args:
-        experiment_id (str): MLflow experiment id.
-        run_id (str | None): Specific run id. If None, uses the latest run in experiment.
-    """
-    mlflow.set_tracking_uri(tracking_uri)
-    client = MlflowClient()
-
-    resolved_run_id = run_id
-    if resolved_run_id is None:
-        runs = mlflow.search_runs(
-            experiment_ids=[experiment_id],
-            order_by=["start_time DESC"],
-            max_results=1,
-        )
-        if runs.empty:
-            raise ValueError(f"No runs found for experiment_id={experiment_id}.")
-        resolved_run_id = runs.iloc[0]["run_id"]
-
-    run = client.get_run(resolved_run_id)
-    if run.info.experiment_id != str(experiment_id):
-        raise ValueError(
-            f"run_id={resolved_run_id} does not belong to experiment_id={experiment_id}."
-        )
-
-    model_history = run.data.tags.get("mlflow.log-model.history")
-    if model_history:
-        history = json.loads(model_history)
-        artifact_path = history[-1]["artifact_path"]
-    else:
-        root_artifacts = client.list_artifacts(resolved_run_id)
-        artifact_path = None
-        for artifact in root_artifacts:
-            if artifact.is_dir:
-                nested = client.list_artifacts(resolved_run_id, artifact.path)
-                if any(item.path.endswith("MLmodel") for item in nested):
-                    artifact_path = artifact.path
-                    break
-        if artifact_path is None:
-            raise ValueError(
-                f"No model artifact found for run_id={resolved_run_id} in experiment_id={experiment_id}."
-            )
-
-    model_uri = f"runs:/{resolved_run_id}/{artifact_path}"
-    print(
-        f"Loading latest model artifact from run '{resolved_run_id}' (experiment '{experiment_id}') at '{artifact_path}'..."
-    )
-    model = mlflow.lightgbm.load_model(model_uri)
-    print(f"Loaded model from '{model_uri}'.")
-    return model
-
-
 def fetch_categorical_mapping_by_run_id(run_id: str) -> dict[str, list]:
     """
     Fetch saved categorical mapping from MLflow run tags.
@@ -813,6 +757,28 @@ def fetch_categorical_mapping_by_run_id(run_id: str) -> dict[str, list]:
         raise ValueError(f"categorical_mapping tag is not a dict for run_id={run_id}.")
     return mapping
 
+def download_model_artifacts_from_registry_by_alias(model_name: str, alias: str = "production", local_artifact_dir: str = "../api/artifacts") -> LGBMClassifier:
+    """Download model artifacts from MLFlow model registry and load model
+
+    Args:
+        model_name (str): Model name
+        alias (str, optional): Alias in model registry. Defaults to "production".
+        local_artifact_dir (str, optional): Local directory to store artifacts. Defaults to "../api/artifacts".
+
+    Returns:
+        LGBMClassifier: LightGBM classifier
+    """
+
+    os.makedirs(local_artifact_dir, exist_ok=True)
+
+    local_path = mlflow.artifacts.download_artifacts(
+        artifact_uri=f"models:/{model_name}@{alias}",
+        dst_path=local_artifact_dir,
+    )
+    
+    model = mlflow.lightgbm.load_model(local_path)
+
+    return model
 
 def safe_production_transform(X_new, fitted_features_list):
     # Do NOT concat with X_train here.
