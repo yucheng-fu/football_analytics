@@ -82,7 +82,7 @@ class ModelCVEvaluator:
         )
         self.ohe_columns = ohe_columns if ohe_columns is not None else []
         self.seed = 165
-        self.n_jobs = os.cpu_count() or 1
+        self.n_jobs = max(1, os.cpu_count() - 8) or 1
         self.inner_cv = StratifiedKFold(
             n_splits=self.n_inner_splits, shuffle=True, random_state=self.seed
         )
@@ -140,7 +140,8 @@ class ModelCVEvaluator:
             f"""Starting training with model {self.model_type} with the following configuration:
         - {self.n_inner_splits} inner splits
         - {self.n_outer_splits} outer splits
-        - {self.n_trials} trials"""
+        - {self.n_trials} trials
+        - max {self.n_jobs} concurrent jobs"""
         )
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         logging.getLogger("mlflow").setLevel(logging.ERROR)
