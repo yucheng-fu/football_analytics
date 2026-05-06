@@ -5,10 +5,11 @@ __pycache__/
 # Logs
 *.log
 
-# Virtual environments
+# Virtual environments and environment variables
 venv/
 env/
 .venv/
+.env
 
 # IDE / editor files
 .vscode/
