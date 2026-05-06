@@ -317,7 +317,7 @@ def split_train_test(passes_df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFram
     return train_df, test_df
 
 
-def plot_correlations(train_df: pl.DataFrame, numerical_cols: List[str]) -> None:
+def plot_correlations(train_df: pl.DataFrame, numerical_cols: List[str], fig_name: str) -> None:
     """Plot correlation plot for continuous features
 
     Args:
@@ -329,11 +329,12 @@ def plot_correlations(train_df: pl.DataFrame, numerical_cols: List[str]) -> None
     plt.figure(figsize=(16, 9))
     sns.heatmap(corr_matrix, annot=True, cmap="coolwarm", fmt=".2f")
     plt.title("Correlation Matrix of Continuous Features")
+    plt.savefig(fig_name, dpi=300, bbox_inches="tight")
     plt.show()
 
 
 def plot_numerical_feature_distributions(
-    train_df: pl.DataFrame, numerical_cols: List[str], rows: int = 3, cols: int = 3
+    train_df: pl.DataFrame, numerical_cols: List[str], fig_name: str, rows: int = 3, cols: int = 3
 ) -> None:
     """Plot numerical feature distributions
 
@@ -351,11 +352,12 @@ def plot_numerical_feature_distributions(
         ax[i].set_title(f"Distribution of {column}")
         ax[i].set_xlabel(column)
         ax[i].set_ylabel("Frequency")
+    plt.savefig(fig_name, dpi=300, bbox_inches="tight")
     plt.show()
 
 
 def plot_categorical_feature_distributions(
-    train_df: pl.DataFrame, categorical_cols: List[str]
+    train_df: pl.DataFrame, categorical_cols: List[str], fig_name: str
 ) -> None:
     """Plot categorical feature distributions
 
@@ -378,6 +380,7 @@ def plot_categorical_feature_distributions(
     ax[-1].set_xlabel("Outcome")
     ax[-1].set_ylabel("Count")
     ax[-1].set_title("Count Plot of Outcome")
+    plt.savefig(fig_name, dpi=300, bbox_inches="tight")
     plt.show()
 
 
