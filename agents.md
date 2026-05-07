@@ -29,6 +29,8 @@ football_analytics/
 Follow the standards defined in the `pyproject.toml` file.
 - Avoid writing unnecessary comments inline.
 - Avoid defining functions within functions.
+- Avoid implementing "fallbacks" unless explicitly prompted.
+- Docstring format: Follow the autoDocstring format. 
 
 ### Tests
 Unit tests are placed in `tests/` and the name convention is to use `test_` prefix.

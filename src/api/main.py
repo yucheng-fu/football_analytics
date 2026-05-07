@@ -1,25 +1,22 @@
 from contextlib import asynccontextmanager
 import os
+from pathlib import Path
 
+import uvicorn
 from fastapi import FastAPI
+from dotenv import load_dotenv
 
 from api.v1.router import api_router
-from utils.statics import FINAL_MODELS_EXPERIMENT_ID
-from utils.utils import fetch_inference_bundle
+from utils.utils import load_inference_bundle_from_local_artifacts
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    model_experiment_id = os.getenv(
-        "APP_MODEL_EXPERIMENT_ID", FINAL_MODELS_EXPERIMENT_ID
-    )
-    model_run_id = os.getenv("APP_MODEL_RUN_ID")
-    metadata_run_id = os.getenv("APP_METADATA_RUN_ID", model_run_id)
-
-    app.state.inference_bundle = fetch_inference_bundle(
-        model_experiment_id=model_experiment_id,
-        model_run_id=model_run_id,
-        metadata_run_id=metadata_run_id,
+    load_dotenv()
+    default_artifact_dir = str(Path(__file__).resolve().parent / "artifacts")
+    artifact_dir = os.getenv("APP_ARTIFACT_DIR", default_artifact_dir)
+    app.state.inference_bundle = load_inference_bundle_from_local_artifacts(
+        artifact_dir
     )
     app.state.model = app.state.inference_bundle["model"]
     yield
