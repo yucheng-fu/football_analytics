@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 @router.get("/health", tags=["Inference"])
-def health(request: Request) -> dict[str, Any]:
+def health(request: Request) -> dict[str, bool]:
     service = getattr(request.app.state, "model_service", None)
     model_loaded = service is not None and service.is_model_available()
     return {"status": "ok", "model_loaded": model_loaded}

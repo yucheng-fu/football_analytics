@@ -20,7 +20,9 @@ router = APIRouter(prefix="/data")
 )
 def inference_frame(
     payload: InferenceRequest,
-    inference_frame_service: InferenceFrameService = Depends(get_inference_frame_service),
+    inference_frame_service: InferenceFrameService = Depends(
+        get_inference_frame_service
+    ),
     _: str = Depends(verify_api_key),
 ) -> dict:
     try:
