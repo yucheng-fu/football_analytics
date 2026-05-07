@@ -1,3 +1,4 @@
+import os
 from fastapi.security import APIKeyHeader
 from fastapi import Depends, HTTPException, status
 
