@@ -60,7 +60,8 @@ class InferenceResponse(BaseModel):
 
 @router.get("/health", tags=["Inference"])
 def health(request: Request) -> dict[str, Any]:
-    model_loaded = getattr(request.app.state, "model", None) is not None
+    bundle = getattr(request.app.state, "inference_bundle", None)
+    model_loaded = bundle is not None and bundle.get("model") is not None
     return {"status": "ok", "model_loaded": model_loaded}
 
 
@@ -79,9 +80,10 @@ def predict(
     request: Request,
     _: str = Depends(verify_api_key),
 ) -> InferenceResponse:
-    model = getattr(request.app.state, "model", None)
-    if model is None:
+    bundle = getattr(request.app.state, "inference_bundle", None)
+    if bundle is None or bundle.get("model") is None:
         raise HTTPException(status_code=500, detail="Model is not loaded")
+    model = bundle["model"]
 
     try:
         input_df = pd.DataFrame([payload.model_dump()])

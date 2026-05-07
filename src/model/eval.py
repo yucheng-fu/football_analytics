@@ -40,6 +40,7 @@ class ModelEval:
         row_wise_transformations: Optional[RowWiseTransformations] = None,
         categorical_columns: Optional[list] = None,
         categorical_mapping: Optional[dict[str, list]] = None,
+        fitted_column_transformer: Optional[ColumnTransformer] = None,
     ):
         self.model = model
         self.X_train = X_train
@@ -54,6 +55,7 @@ class ModelEval:
             else RowWiseTransformations()
         )
         self.categorical_columns = categorical_columns or []
+        self.fitted_column_transformer = fitted_column_transformer
         self.categorical_mapping = self._resolve_categorical_mapping(
             categorical_mapping
         )
@@ -75,15 +77,6 @@ class ModelEval:
         if not self.row_wise_features:
             return X_pd
         return safe_production_transform(X_pd, self.row_wise_features)
-
-    def _build_column_transformer(self) -> Optional[ColumnTransformer]:
-        if not self.column_wise_features:
-            return None
-        formula_to_safe_name = {
-            tree_to_formula(node): f"ofe_col_{idx + 1}"
-            for idx, node in enumerate(self.column_wise_features)
-        }
-        return ColumnTransformer(feature_name_mapping=formula_to_safe_name)
 
     def _categorical_feature_names(self, X_pd: pd.DataFrame) -> list[str]:
         """Return configured categorical column names that exist in ``X_pd``."""
@@ -122,14 +115,11 @@ class ModelEval:
         self,
         X_data: pl.DataFrame,
         column_transformer: Optional[ColumnTransformer] = None,
-        fit_column_transformer: bool = False,
     ) -> pd.DataFrame:
         X_pd = X_data.to_pandas().copy()
         X_pd = self.row_wise_transformations.apply_row_wise_transformations(X_pd)
         X_pd = self._apply_openfe_rowwise_nodes(X_pd)
         if column_transformer is not None:
-            if fit_column_transformer:
-                column_transformer.fit(X_pd, feature_nodes=self.column_wise_features)
             X_pd = column_transformer.transform(X_pd)
         X_pd = self._add_legacy_openfe_aliases(X_pd)
         return self._apply_categorical_dtypes(X_pd)
@@ -183,16 +173,19 @@ class ModelEval:
         """Evaluate model on the test set."""
         self.setup_mlflow()
 
-        column_transformer = self._build_column_transformer()
+        if self.column_wise_features and self.fitted_column_transformer is None:
+            raise ValueError(
+                "column_wise_features were provided but no fitted_column_transformer "
+                "was passed to ModelEval. Pass the fitted transformer from training."
+            )
+        column_transformer = self.fitted_column_transformer
         X_train_pd = self._build_eval_frame(
             self.X_train,
             column_transformer=column_transformer,
-            fit_column_transformer=True,
         )
         X_test_pd = self._build_eval_frame(
             X_test,
             column_transformer=column_transformer,
-            fit_column_transformer=False,
         )
         y_test_np = y_test.to_numpy().ravel()
         y_train_np = self.y_train.to_numpy().ravel()

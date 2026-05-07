@@ -2,7 +2,7 @@ import json
 import os
 import pickle
 import tempfile
-from typing import Tuple, List, Optional
+from typing import Any, Tuple, List, Optional
 from mlflow.entities import ViewType
 
 import matplotlib.pyplot as plt
@@ -515,6 +515,24 @@ def get_best_params_and_features_from_parent_run_id(
     return (best_params, best_features)
 
 
+def resolve_downloaded_pickle_path(local_path: str) -> str:
+    """Resolve a pickle file path returned by MLflow artifact download."""
+    if os.path.isfile(local_path):
+        return local_path
+
+    if os.path.isdir(local_path):
+        pkl_files = sorted(
+            os.path.join(root, filename)
+            for root, _, files in os.walk(local_path)
+            for filename in files
+            if filename.endswith(".pkl")
+        )
+        if pkl_files:
+            return pkl_files[0]
+
+    raise ValueError(f"Could not resolve pickle file from downloaded path: {local_path}")
+
+
 def get_ofe_feature_nodes_from_run_id(
     run_id: str,
     row_artifact_name: Optional[str] = None,
@@ -535,23 +553,6 @@ def get_ofe_feature_nodes_from_run_id(
     Raises:
         ValueError: If required artifacts are not found for the provided run.
     """
-
-    def _resolve_downloaded_pickle_path(local_path: str) -> str:
-        if os.path.isfile(local_path):
-            return local_path
-
-        if os.path.isdir(local_path):
-            pkl_files: list[str] = []
-            for root, _, files in os.walk(local_path):
-                for filename in files:
-                    if filename.endswith(".pkl"):
-                        pkl_files.append(os.path.join(root, filename))
-            if pkl_files:
-                return sorted(pkl_files)[0]
-
-        raise ValueError(
-            f"Could not resolve pickle file from downloaded path: {local_path}"
-        )
 
     mlflow.set_tracking_uri(tracking_uri)
     client = MlflowClient()
@@ -584,8 +585,8 @@ def get_ofe_feature_nodes_from_run_id(
     with tempfile.TemporaryDirectory() as tmp_dir:
         row_local = client.download_artifacts(run_id, row_artifact_path, tmp_dir)
         col_local = client.download_artifacts(run_id, column_artifact_path, tmp_dir)
-        row_file = _resolve_downloaded_pickle_path(row_local)
-        col_file = _resolve_downloaded_pickle_path(col_local)
+        row_file = resolve_downloaded_pickle_path(row_local)
+        col_file = resolve_downloaded_pickle_path(col_local)
 
         with open(row_file, "rb") as f:
             row_wise_features = pickle.load(f)
@@ -809,6 +810,70 @@ def fetch_categorical_mapping_by_run_id(run_id: str) -> dict[str, list]:
     if not isinstance(mapping, dict):
         raise ValueError(f"categorical_mapping tag is not a dict for run_id={run_id}.")
     return mapping
+
+
+def fetch_fitted_column_transformer_by_run_id(
+    run_id: str, artifact_name: str = "fitted_column_transformer"
+):
+    """
+    Fetch fitted ColumnTransformer pickle artifact from an MLflow run.
+
+    Args:
+        run_id (str): MLflow run id.
+        artifact_name (str): Artifact directory name under `pickles/`.
+    """
+
+    mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient()
+    artifact_path = f"pickles/{artifact_name}"
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        local_path = client.download_artifacts(run_id, artifact_path, tmp_dir)
+        pickle_file = resolve_downloaded_pickle_path(local_path)
+        with open(pickle_file, "rb") as f:
+            return pickle.load(f)
+
+
+def fetch_inference_bundle(
+    model_experiment_id: str,
+    model_run_id: str | None = None,
+    metadata_run_id: str | None = None,
+    column_transformer_artifact_name: str = "fitted_column_transformer",
+) -> dict[str, Any]:
+    """
+    Fetch a complete inference bundle from MLflow.
+
+    The bundle contains model + preprocessing artifacts + metadata used by API
+    inference.
+    """
+    resolved_metadata_run_id = metadata_run_id or model_run_id
+    if resolved_metadata_run_id is None:
+        raise ValueError("metadata_run_id is required when model_run_id is not provided.")
+
+    model = fetch_latest_model_artifact(
+        experiment_id=model_experiment_id, run_id=model_run_id
+    )
+    fitted_column_transformer = fetch_fitted_column_transformer_by_run_id(
+        run_id=resolved_metadata_run_id,
+        artifact_name=column_transformer_artifact_name,
+    )
+    best_params, selected_features = get_best_params_and_features_from_parent_run_id(
+        parent_run_id=resolved_metadata_run_id
+    )
+    categorical_mapping = fetch_categorical_mapping_by_run_id(
+        run_id=resolved_metadata_run_id
+    )
+
+    return {
+        "model": model,
+        "fitted_column_transformer": fitted_column_transformer,
+        "best_params": best_params,
+        "selected_features": selected_features,
+        "categorical_mapping": categorical_mapping,
+        "model_run_id": model_run_id,
+        "metadata_run_id": resolved_metadata_run_id,
+        "model_experiment_id": model_experiment_id,
+    }
 
 
 def safe_production_transform(X_new, fitted_features_list):

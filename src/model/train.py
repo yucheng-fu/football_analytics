@@ -1,6 +1,9 @@
 import logging
 import json
-from typing import List, Optional
+import os
+import pickle
+import tempfile
+from typing import Any, List, Optional
 
 import mlflow
 import numpy as np
@@ -113,10 +116,12 @@ class ModelTrainer:
             return X_pd
         return safe_production_transform(X_pd, self.row_wise_features)
 
-    def _apply_openfe_columnwise_nodes(self, X_pd: pd.DataFrame) -> pd.DataFrame:
-        """Apply OpenFE column-wise nodes via fitted ColumnTransformer."""
+    def _apply_openfe_columnwise_nodes(
+        self, X_pd: pd.DataFrame
+    ) -> tuple[pd.DataFrame, Optional[ColumnTransformer]]:
+        """Apply OpenFE column-wise nodes and return transformed data + fitted transformer."""
         if not self.column_wise_features:
-            return X_pd
+            return X_pd, None
 
         formula_to_safe_name = {
             tree_to_formula(node): f"ofe_col_{idx + 1}"
@@ -126,15 +131,17 @@ class ModelTrainer:
             feature_name_mapping=formula_to_safe_name
         )
         column_transformer.fit(X_pd, feature_nodes=self.column_wise_features)
-        return column_transformer.transform(X_pd)
+        return column_transformer.transform(X_pd), column_transformer
 
-    def _build_training_frame(self, X_train: pl.DataFrame) -> pd.DataFrame:
-        """Build final training dataframe with all feature engineering steps applied."""
+    def _build_training_frame(
+        self, X_train: pl.DataFrame
+    ) -> tuple[pd.DataFrame, Optional[ColumnTransformer]]:
+        """Build training dataframe and return transformed data + fitted column transformer."""
         X_pd = X_train.to_pandas().copy()
         X_pd = self.row_wise_transformations.apply_row_wise_transformations(X_pd)
         X_pd = self._apply_openfe_rowwise_nodes(X_pd)
-        X_pd = self._apply_openfe_columnwise_nodes(X_pd)
-        return self._apply_categorical_dtypes(X_pd)
+        X_pd, column_transformer = self._apply_openfe_columnwise_nodes(X_pd)
+        return self._apply_categorical_dtypes(X_pd), column_transformer
 
     def _add_legacy_openfe_aliases(self, X_pd: pd.DataFrame) -> pd.DataFrame:
         """Add compatibility aliases for legacy OpenFE row-wise names (autoFE_f_*)."""
@@ -198,6 +205,18 @@ class ModelTrainer:
             version=registered_model.version,
         )
 
+    def _log_artifact(self, name: str, object: Any) -> None:
+        """Serialize an object to a temporary pickle file and log it to MLflow."""
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_file_path = os.path.join(tmp_dir, f"{name}.pkl")
+            with open(tmp_file_path, "wb") as f:
+                pickle.dump(object, f)
+
+            mlflow.log_artifact(
+                local_path=tmp_file_path,
+                artifact_path=f"pickles/{name}",
+            )
+
     def _log_training_run(
         self,
         model: LGBMClassifier,
@@ -206,6 +225,7 @@ class ModelTrainer:
         y_train_np: np.ndarray,
         run_id: str,
         categorical_mapping: dict[str, list],
+        column_transformer: Optional[ColumnTransformer] = None,
     ) -> None:
         """Log artifacts/metrics and register trained model."""
         train_log_loss = log_loss(y_train_np, y_pred_proba)
@@ -213,6 +233,8 @@ class ModelTrainer:
         mlflow.log_params(self.params)
         mlflow.set_tag("features", ",".join(map(str, self.features)))
         mlflow.set_tag("categorical_mapping", json.dumps(categorical_mapping))
+        if column_transformer is not None:
+            self._log_artifact("fitted_column_transformer", column_transformer)
         mlflow.log_metric("train_loss", train_log_loss)
         self._register_and_tag_model(run_id=run_id)
 
@@ -220,7 +242,7 @@ class ModelTrainer:
         """Train final model using params + row/column-wise OFE features + selected features."""
         self.setup_mlflow()
 
-        X_train_pd = self._build_training_frame(X_train)
+        X_train_pd, fitted_column_transformer = self._build_training_frame(X_train)
         X_train_pd = self._add_legacy_openfe_aliases(X_train_pd)
         y_train_np = y_train.to_numpy().ravel()
 
@@ -250,6 +272,7 @@ class ModelTrainer:
                 y_train_np=y_train_np,
                 run_id=run.info.run_id,
                 categorical_mapping=categorical_mapping,
+                column_transformer=fitted_column_transformer,
             )
 
             return model
