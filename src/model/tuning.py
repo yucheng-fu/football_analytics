@@ -30,7 +30,8 @@ class ModelParamTuner(ModelCVEvaluator):
         self.logger.info(
             f"""Starting training with model {self.model_type} with the following configuration:
         - {self.n_inner_splits} inner splits
-        - {self.n_trials} trials"""
+        - {self.n_trials} trials
+        - max {self.n_jobs} concurrent jobs"""
         )
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         logging.getLogger("mlflow").setLevel(logging.ERROR)
