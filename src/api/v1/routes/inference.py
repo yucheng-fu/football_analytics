@@ -1,37 +1,21 @@
-import os
-from datetime import datetime, timezone
+import logging
 from typing import Any
 
-import mlflow
-import numpy as np
-import pandas as pd
-import uvicorn
-from dotenv import load_dotenv
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.security import APIKeyHeader
+from fastapi import APIRouter, Depends, HTTPException, Request
+from api.core.auth import verify_api_key
+from api.core.dependencies import get_model_service
 from api.schemas.request import InferenceRequest
 from api.schemas.response import InferenceResponse
-from utils.utils import prepare_inference_frame
+from api.services.model_service import ModelService
 
 router = APIRouter(prefix="/inference")
-api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
-
-
-def verify_api_key(api_key: str | None = Depends(api_key_header)) -> str:
-    load_dotenv()
-    expected_key = os.getenv("APP_API_KEY")
-    if not expected_key or api_key != expected_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Unauthorized: invalid API key",
-        )
-    return api_key
+logger = logging.getLogger(__name__)
 
 
 @router.get("/health", tags=["Inference"])
 def health(request: Request) -> dict[str, Any]:
-    bundle = getattr(request.app.state, "inference_bundle", None)
-    model_loaded = bundle is not None and bundle.get("model") is not None
+    service = getattr(request.app.state, "model_service", None)
+    model_loaded = service is not None and service.is_model_available()
     return {"status": "ok", "model_loaded": model_loaded}
 
 
@@ -47,69 +31,29 @@ def health(request: Request) -> dict[str, Any]:
 )
 def predict(
     payload: InferenceRequest,
-    request: Request,
+    service: ModelService = Depends(get_model_service),
     _: str = Depends(verify_api_key),
 ) -> InferenceResponse:
-    """_summary_
+    """Run inference for a validated request payload.
 
     Args:
-        payload (InferenceRequest): _description_
-        request (Request): _description_
-        _ (str, optional): _description_. Defaults to Depends(verify_api_key).
+        payload (InferenceRequest): Inference input payload.
+        service (ModelService, optional): Injected model service.
+        _ (str, optional): API key dependency placeholder.
 
     Raises:
-        HTTPException: _description_
-        HTTPException: _description_
-        HTTPException: _description_
-        HTTPException: _description_
-        HTTPException: _description_
+        HTTPException: If model is not loaded or inference fails.
 
     Returns:
-        InferenceResponse: _description_
+        InferenceResponse: Prediction payload.
     """
-    bundle = getattr(request.app.state, "inference_bundle", None)
-    if bundle is None or bundle.get("model") is None:
-        raise HTTPException(status_code=500, detail="Model is not loaded")
-    model = bundle["model"]
-    fitted_column_transformer = bundle.get("fitted_column_transformer")
-    row_wise_features = bundle.get("row_wise_features")
-    column_wise_features = bundle.get("column_wise_features")
-    best_features = bundle.get("best_features", bundle.get("selected_features"))
-    categorical_mapping = bundle.get("categorical_mapping")
+    if not service.is_model_available():
+        raise HTTPException(status_code=500, detail="Model unavailable")
 
     try:
-        input_df = pd.DataFrame([payload.model_dump(mode="json")])
-        model_input = prepare_inference_frame(
-            X_pd=input_df,
-            row_wise_features=row_wise_features,
-            column_wise_features=column_wise_features,
-            column_transformer=fitted_column_transformer,
-            best_features=best_features,
-            categorical_mapping=categorical_mapping,
-        )
-        if not hasattr(model, "predict_proba"):
-            raise HTTPException(
-                status_code=500, detail="Loaded model does not support predict_proba"
-            )
-
-        proba_raw = model.predict_proba(model_input)
-        proba_array = np.asarray(proba_raw)
-        if proba_array.ndim != 2:
-            raise HTTPException(status_code=500, detail="Invalid predict_proba output")
-
-        class_idx = int(np.argmax(proba_array[0]))
-        probability = float(proba_array[0, class_idx])
-        classes = getattr(model, "classes_", None)
-        prediction = classes[class_idx] if classes is not None else class_idx
-
-        return InferenceResponse(
-            prediction=prediction,
-            probability=probability,
-            timestamp=datetime.now(timezone.utc).isoformat(),
-        )
-    except mlflow.exceptions.MlflowException as exc:
-        raise HTTPException(status_code=500, detail=f"Inference failed: {exc}") from exc
+        return service.predict(payload)
     except HTTPException:
         raise
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Inference failed: {exc}") from exc
+        logger.error("Prediction error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal inference error") from exc
