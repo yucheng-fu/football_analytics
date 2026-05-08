@@ -1,5 +1,4 @@
 import logging
-from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from api.core.auth import verify_api_key
@@ -56,4 +55,32 @@ def predict(
         raise
     except Exception as exc:
         logger.error("Prediction error: %s", exc)
+        raise HTTPException(status_code=500, detail="Internal inference error") from exc
+
+
+@router.post(
+    "/predict/batch",
+    tags=["Inference"],
+    response_model=list[InferenceResponse],
+    responses={
+        401: {"description": "Unauthorized: invalid API key"},
+        422: {"description": "Validation Error"},
+        500: {"description": "Inference failed"},
+    },
+)
+def predict_batch(
+    payloads: list[InferenceRequest],
+    service: ModelService = Depends(get_model_service),
+    _: str = Depends(verify_api_key),
+) -> list[InferenceResponse]:
+    """Run inference for multiple validated request payloads."""
+    if not service.is_model_available():
+        raise HTTPException(status_code=500, detail="Model unavailable")
+
+    try:
+        return [service.predict(payload) for payload in payloads]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.error("Batch prediction error: %s", exc)
         raise HTTPException(status_code=500, detail="Internal inference error") from exc
