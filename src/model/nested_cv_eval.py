@@ -11,8 +11,8 @@ from sklearn.metrics import log_loss
 from sklearn import clone
 import optuna
 import matplotlib.pyplot as plt
-from src.utils.statics import lightgbm_model_name, tracking_uri
-from src.utils.utils import plot_feature_importance, plot_calibration_curve
+from utils.statics import lightgbm_model_name, tracking_uri
+from utils.utils import plot_feature_importance, plot_calibration_curve
 import mlflow
 from mlflow.entities import Run
 from mlflow.models import infer_signature
@@ -20,16 +20,16 @@ from mlflow.tracking import MlflowClient
 from mlflow.utils.mlflow_tags import MLFLOW_PARENT_RUN_ID
 import numpy as np
 import logging
-from src.model.data_classes import OuterCVResults
+from model.data_classes import OuterCVResults
 from optuna.integration import LightGBMPruningCallback
 from optuna.visualization import plot_param_importances
 from lightgbm.callback import early_stopping
 import pandas as pd
-from src.feature_engineering.ColumnTransformer import ColumnTransformer
-from src.feature_engineering.RowWiseTransformations import RowWiseTransformations
-from src.feature_engineering.OpenFETransformations import OpenFETransformations
-from src.feature_engineering.OpenFE.FeatureGenerator import Node
-from src.feature_engineering.OpenFE.utils import tree_to_formula
+from feature_engineering.ColumnTransformer import ColumnTransformer
+from feature_engineering.RowWiseTransformations import RowWiseTransformations
+from feature_engineering.OpenFETransformations import OpenFETransformations
+from feature_engineering.OpenFE.FeatureGenerator import Node
+from feature_engineering.OpenFE.utils import tree_to_formula
 
 
 class ModelCVEvaluator:
@@ -82,7 +82,7 @@ class ModelCVEvaluator:
         )
         self.ohe_columns = ohe_columns if ohe_columns is not None else []
         self.seed = 165
-        self.n_jobs = os.cpu_count() or 1
+        self.n_jobs = max(1, os.cpu_count() - 8) or 1
         self.inner_cv = StratifiedKFold(
             n_splits=self.n_inner_splits, shuffle=True, random_state=self.seed
         )
@@ -140,7 +140,8 @@ class ModelCVEvaluator:
             f"""Starting training with model {self.model_type} with the following configuration:
         - {self.n_inner_splits} inner splits
         - {self.n_outer_splits} outer splits
-        - {self.n_trials} trials"""
+        - {self.n_trials} trials
+        - max {self.n_jobs} concurrent jobs"""
         )
         optuna.logging.set_verbosity(optuna.logging.WARNING)
         logging.getLogger("mlflow").setLevel(logging.ERROR)

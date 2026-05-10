@@ -1,8 +1,8 @@
 from typing import Tuple, List
 import pandas as pd
 import numpy as np
-from src.feature_engineering.OpenFE.utils import tree_to_formula, transform
-from src.feature_engineering.OpenFE.openfe import OpenFE
+from feature_engineering.OpenFE.utils import tree_to_formula, transform
+from feature_engineering.OpenFE.openfe import OpenFE
 
 
 class OpenFETransformations:

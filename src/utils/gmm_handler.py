@@ -4,8 +4,8 @@ import numpy as np
 import polars as pl
 from sklearn.mixture import GaussianMixture
 
-from src.utils.statics import PITCH_X, PITCH_Y
-from src.utils.utils import invert_orientation
+from utils.statics import PITCH_X, PITCH_Y
+from utils.utils import invert_orientation
 
 
 class GMMHandler:

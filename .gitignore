@@ -5,10 +5,11 @@ __pycache__/
 # Logs
 *.log
 
-# Virtual environments
+# Virtual environments and environment variables
 venv/
 env/
 .venv/
+.env
 
 # IDE / editor files
 .vscode/
@@ -20,8 +21,16 @@ env/
 Thumbs.db
 
 # MLflow / experiment outputs
-02-analysis/mlruns/
+/src/02-analysis/mlruns/
+mlruns/
+mlartifacts/
 
 # OFE
-02-analysis/*.feather
+/src/02-analysis/*.feather
 *.feather
+
+# API
+/src/api/artifacts/
+
+# setuptools
+/src/*.egg-info/
