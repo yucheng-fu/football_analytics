@@ -2,38 +2,43 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Tactical Pitch Designer</title>
-  <link rel="stylesheet" href="style.css">
-  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <title>Pitch</title>
+  <link rel="stylesheet" href="assets/css/style.css">
 </head>
 <body>
 
   <div id="app-container">
-    <!-- Section 1: The Pitch -->
     <div id="pitch-container">
       <svg id="canvas"></svg>
     </div>
 
-    <!-- Section 2: The List -->
     <aside id="sidebar">
       <div class="sidebar-header">
         <h3>Drawn Plays</h3>
+        <div class="probability-legend">
+          <div class="legend-title">Predicted Success Probability</div>
+          <div class="legend-bar" aria-hidden="true"></div>
+          <div class="legend-ticks">
+            <span>0.0</span>
+            <span>0.5</span>
+            <span>1.0</span>
+          </div>
+        </div>
       </div>
       <div id="menu-list-wrapper">
         <div id="menu-list"></div>
       </div>
       <div id="pagination-controls"></div>
-      <!-- New: Global Clear Button -->
+
       <div class="sidebar-footer">
         <button id="btn-clear-all" class="btn-danger-outline">Clear All Plays</button>
       </div>
     </aside>
 
-    <!-- Section 3: The Property Menu -->
     <div id="edit-panel">
       <div class="panel-header">
         <h4>Properties</h4>
-        <button id="close-panel" onclick="activeId=null; render();">&times;</button>
+        <button id="close-panel">&times;</button>
       </div>
       
       <div class="input-group">
@@ -65,18 +70,19 @@
       <div class="input-group">
         <div class="label-row">
           <label>Duration</label>
-          <span id="duration-val">1.0</span>s
+          <span id="duration-val">1.0</span>
         </div>
         <input type="range" id="input-duration" min="0.5" max="10" step="0.1" value="1.0">
       </div>
 
-      <!-- New: Delete Single Arrow Button -->
       <div class="panel-footer">
         <button id="btn-delete-active" class="btn-danger">Delete Pass</button>
+        <button id="btn-predict-active" class="btn-primary">Predict Pass Success</button>
+        <p id="prediction-status" class="status-text"></p>
       </div>
     </div>
   </div>
 
-  <script src="script.js"></script>
+  <script type="module" src="./src/main.ts"></script>
 </body>
 </html>
