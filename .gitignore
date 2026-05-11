@@ -36,8 +36,5 @@ mlartifacts/
 /src/02-analysis/*.feather
 *.feather
 
-# API
-/src/api/artifacts/
-
 # setuptools
 /src/*.egg-info/

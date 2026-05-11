@@ -11,8 +11,20 @@ The frontend should call `/api/v1/pass-prediction/predict` and must not include 
 
 # Deployment Pattern (No Runtime MLflow Dependency)
 1. Download artifacts before image build:
-`python -m api.scripts.download_inference_artifacts --metadata-run-id <RUN_ID> --tracking-uri <MLFLOW_TRACKING_URI>`
+`python -m api.scripts.download_inference_artifacts --tracking-uri <MLFLOW_TRACKING_URI> --output-dir src/api/artifacts --model-name "Final models_lightgbm" --model-alias production --final-models-experiment-id <FINAL_MODELS_EXPERIMENT_ID> --model-selection-experiment-id <MODEL_SELECTION_EXPERIMENT_ID>`
 2. Build Docker image (artifacts are copied into `src/api/artifacts`):
 `docker build -t football-analytics-api .`
 3. Run API container:
 `docker run -p 8000:8000 -e APP_API_KEY=<YOUR_KEY> football-analytics-api`
+
+The artifact download script writes these files to `src/api/artifacts` by default:
+- `model/`
+- `row_wise_features.pkl`
+- `column_wise_features.pkl`
+- `fitted_column_transformer.pkl`
+- `params.json`
+- `best_params.json`
+- `best_features.json`
+- `selected_features.json`
+- `categorical_mapping.json`
+- `manifest.json`
