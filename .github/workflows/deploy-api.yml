@@ -6,6 +6,7 @@ on:
     paths:
       - "src/api/**"
       - "src/utils/**"
+      - "src/model/**"
       - "Dockerfile"
       - "README.md"
       - "pyproject.toml"
@@ -33,6 +34,7 @@ jobs:
           # 2. Copy the folders into the NEW src directory
           cp -r src/api deploy_dir/src/
           cp -r src/utils deploy_dir/src/
+          cp -r src/model deploy_dir/src/
           
           # 3. Copy root files (Dockerfile and config files)
           cp Dockerfile deploy_dir/
