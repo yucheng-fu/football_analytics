@@ -36,6 +36,7 @@ jobs:
         working-directory: hf-space
         run: |
           set -euo pipefail
+          set -x
           test -d .git
           git rev-parse --show-toplevel
           git config user.name "github-actions"
@@ -43,6 +44,9 @@ jobs:
           git remote -v
           git checkout -B main
           git add .
-          git diff --cached --quiet && exit 0
+          if git diff --cached --quiet; then
+            echo "No changes to deploy."
+            exit 0
+          fi
           git commit -m "Deploy update from GitHub Actions"
           git push hf main --force
