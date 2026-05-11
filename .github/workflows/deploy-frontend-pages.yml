@@ -15,8 +15,25 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Detect frontend changes
+        id: frontend_changes
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          if git diff --quiet HEAD^ HEAD -- frontend; then
+            echo "has_changes=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "has_changes=true" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Setup Node
+        if: steps.frontend_changes.outputs.has_changes == 'true'
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -24,6 +41,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
 
       - name: Build frontend
+        if: steps.frontend_changes.outputs.has_changes == 'true'
         working-directory: frontend
         env:
           VITE_PASS_PREDICTION_URL: ${{ secrets.VITE_PASS_PREDICTION_URL }}
@@ -34,6 +52,7 @@ jobs:
           touch dist/.deploy-keep
 
       - name: Publish to yucheng-fu.github.io
+        if: steps.frontend_changes.outputs.has_changes == 'true'
         uses: peaceiris/actions-gh-pages@v4
         with:
           personal_token: ${{ secrets.GH_PAGES_DEPLOY_TOKEN }}
@@ -44,3 +63,7 @@ jobs:
           keep_files: true
           user_name: github-actions[bot]
           user_email: 41898282+github-actions[bot]@users.noreply.github.com
+
+      - name: Skip message
+        if: steps.frontend_changes.outputs.has_changes != 'true'
+        run: echo "No frontend changes detected. Skipping deploy."
