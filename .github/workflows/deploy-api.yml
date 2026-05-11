@@ -7,6 +7,7 @@ on:
       - "src/api/**"
       - "src/utils/**"
       - "src/model/**"
+      - "src/feature_engineering/**"
       - "Dockerfile"
       - "README.md"
       - "pyproject.toml"
@@ -35,6 +36,7 @@ jobs:
           cp -r src/api deploy_dir/src/
           cp -r src/utils deploy_dir/src/
           cp -r src/model deploy_dir/src/
+          cp -r src/feature_engineering deploy_dir/src/
           
           # 3. Copy root files (Dockerfile and config files)
           cp Dockerfile deploy_dir/
