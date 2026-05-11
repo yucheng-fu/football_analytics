@@ -13,9 +13,9 @@ The frontend should call `/api/v1/pass-prediction/predict` and must not include 
 1. Download artifacts before image build:
 `python -m api.scripts.download_inference_artifacts --tracking-uri <MLFLOW_TRACKING_URI> --output-dir src/api/artifacts --model-name "Final models_lightgbm" --model-alias production --final-models-experiment-id <FINAL_MODELS_EXPERIMENT_ID> --model-selection-experiment-id <MODEL_SELECTION_EXPERIMENT_ID>`
 2. Build Docker image (artifacts are copied into `src/api/artifacts`):
-`docker build -t football-analytics-api .`
+`docker build -t football-analytics-api:latest -f Dockerfile .`
 3. Run API container:
-`docker run -p 8000:8000 -e APP_API_KEY=<YOUR_KEY> football-analytics-api`
+`docker run --rm -p 8000:7860 football-analytics-api:latest`
 
 The artifact download script writes these files to `src/api/artifacts` by default:
 - `model/`
