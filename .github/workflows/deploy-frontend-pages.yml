@@ -25,9 +25,13 @@ jobs:
 
       - name: Build frontend
         working-directory: frontend
+        env:
+          VITE_PASS_PREDICTION_URL: ${{ secrets.VITE_PASS_PREDICTION_URL }}
         run: |
           npm ci
           npm run build -- --base=/football-analytics/
+          test -d dist
+          touch dist/.deploy-keep
 
       - name: Publish to yucheng-fu.github.io
         uses: peaceiris/actions-gh-pages@v4
