@@ -32,7 +32,7 @@ fastapi-cloud-cli==0.17.1
 fastar==0.11.0
 flask==3.1.3
 fonttools==4.62.1
--e file:///C:/Users/Yucheng/Documents/DDSA/football_analytics
+-e .
 gitdb==4.0.12
 gitpython==3.1.49
 google-auth==2.50.0
