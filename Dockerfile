@@ -1,17 +1,19 @@
 FROM python:3.11-slim
 
+ENV PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONUNBUFFERED=1 \
+    PIP_NO_CACHE_DIR=1 \
+    PYTHONPATH=/app/src:/app/src/api
+
 WORKDIR /app
 
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app/src
-ENV APP_ARTIFACT_DIR=/app/src/api/artifacts
+# LightGBM runtime dependency
+RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 \
+    && rm -rf /var/lib/apt/lists/*
 
-COPY requirements.txt /app/requirements.txt
-RUN pip install --no-cache-dir -r /app/requirements.txt
+COPY . .
+RUN pip install --upgrade pip && pip install .
 
-COPY src /app/src
+EXPOSE 7860
 
-EXPOSE 8000
-
-CMD ["uvicorn", "api.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["sh", "-c", "uvicorn api.main:app --host 0.0.0.0 --port ${PORT:-7860}"]

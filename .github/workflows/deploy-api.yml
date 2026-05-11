@@ -1,0 +1,38 @@
+name: Deploy API to Hugging Face Space
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "src/api/**"
+      - "src/utils/**"
+      - "Dockerfile"
+      - "README.md"
+      - ".github/workflows/deploy-api.yml"
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Prepare Hugging Face payload
+        run: |
+          rm -rf .hf-space
+          mkdir -p .hf-space
+          cp Dockerfile .hf-space/Dockerfile
+          cp README.md .hf-space/README.md
+          cp -r src/api src/utils .hf-space/src
+
+      - name: Sync to Hugging Face Space
+        uses: huggingface/hub-sync@v0.1.0
+        with:
+          github_repo_id: ${{ github.repository }}
+          huggingface_repo_id: ${{ secrets.HF_SPACE_REPO_ID }}
+          hf_token: ${{ secrets.HF_TOKEN }}
+          repo_type: space
+          space_sdk: docker
+          subdirectory: .hf-space

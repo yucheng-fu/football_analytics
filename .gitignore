@@ -10,6 +10,13 @@ venv/
 env/
 .venv/
 .env
+.env.*
+!.env.example
+
+# Frontend artifacts
+frontend/node_modules/
+frontend/dist/
+frontend/tsconfig.tsbuildinfo
 
 # IDE / editor files
 .vscode/
@@ -28,9 +35,6 @@ mlartifacts/
 # OFE
 /src/02-analysis/*.feather
 *.feather
-
-# API
-/src/api/artifacts/
 
 # setuptools
 /src/*.egg-info/
