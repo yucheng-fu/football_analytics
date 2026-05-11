@@ -21,13 +21,36 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      - name: Push to Hub
+      - name: Prepare and Push to HF
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_REPO: ${{ secrets.HF_SPACE_REPO_ID }}
         run: |
-          # The Repo ID secret should be in the format: username/space-name
-          git remote add hf "https://n:$HF_TOKEN@huggingface.co/spaces/$HF_REPO"
+          # 1. Create a temporary deployment directory
+          mkdir deploy_dir
           
-          # Force push the main branch to the HF remote
+          # 2. Copy only the allowed files/folders into it
+          # This ensures figures/, mlruns/, etc. are completely ignored
+          cp -r src/api deploy_dir/
+          cp -r src/utils deploy_dir/
+          cp Dockerfile deploy_dir/
+          cp README.md deploy_dir/
+
+          # 3. Initialize a fresh, clean git repo in that folder
+          cd deploy_dir
+          git init -b main
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+
+          # 4. Handle LFS for the model files that ARE allowed (like src/api/artifacts/model/model.pkl)
+          git lfs install
+          git lfs track "*.pkl"
+          git lfs track "*.parquet"
+          
+          # 5. Commit and Push
+          git add .
+          git commit -m "Deploying specific paths from GitHub Action"
+          
+          # Add the remote and force push
+          git remote add hf "https://n:$HF_TOKEN@huggingface.co/spaces/$HF_REPO"
           git push --force hf main
