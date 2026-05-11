@@ -8,6 +8,7 @@ on:
       - "src/utils/**"
       - "Dockerfile"
       - "README.md"
+      - "pyproject.toml"
       - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
 
@@ -35,7 +36,7 @@ jobs:
           cp -r src/utils deploy_dir/
           cp Dockerfile deploy_dir/
           cp README.md deploy_dir/
-
+          cp pyproject.toml deploy_dir/
           # 3. Initialize a fresh, clean git repo in that folder
           cd deploy_dir
           git init -b main
