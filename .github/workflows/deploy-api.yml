@@ -27,31 +27,33 @@ jobs:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_REPO: ${{ secrets.HF_SPACE_REPO_ID }}
         run: |
-          # 1. Create a temporary deployment directory
-          mkdir deploy_dir
+          # 1. Create a temporary deployment directory with the src structure
+          mkdir -p deploy_dir/src
           
-          # 2. Copy only the allowed files/folders into it
-          # This ensures figures/, mlruns/, etc. are completely ignored
-          cp -r src/api deploy_dir/
-          cp -r src/utils deploy_dir/
+          # 2. Copy the folders into the NEW src directory
+          cp -r src/api deploy_dir/src/
+          cp -r src/utils deploy_dir/src/
+          
+          # 3. Copy root files (Dockerfile and config files)
           cp Dockerfile deploy_dir/
           cp README.md deploy_dir/
-          cp pyproject.toml deploy_dir/
-          # 3. Initialize a fresh, clean git repo in that folder
+          
+          # IMPORTANT: If you have a pyproject.toml, setup.py, or requirements.txt, 
+          # you MUST copy them so pip knows how to install your app.
+          [ -f pyproject.toml ] && cp pyproject.toml deploy_dir/
+          [ -f setup.py ] && cp setup.py deploy_dir/
+          [ -f requirements.txt ] && cp requirements.txt deploy_dir/
+
+          # 4. Initialize and Push
           cd deploy_dir
           git init -b main
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
-
-          # 4. Handle LFS for the model files that ARE allowed (like src/api/artifacts/model/model.pkl)
           git lfs install
           git lfs track "*.pkl"
           git lfs track "*.parquet"
           
-          # 5. Commit and Push
           git add .
-          git commit -m "Deploying specific paths from GitHub Action"
-          
-          # Add the remote and force push
+          git commit -m "Deploying with correct src structure"
           git remote add hf "https://n:$HF_TOKEN@huggingface.co/spaces/$HF_REPO"
           git push --force hf main
