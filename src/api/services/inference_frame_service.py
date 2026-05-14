@@ -5,12 +5,9 @@ import pandas as pd
 from sklearn.compose import ColumnTransformer
 
 from api.schemas.request import InferenceRequest
-from utils.utils import (
-    RowWiseTransformations,
-    apply_saved_categorical_mapping,
-    safe_production_transform,
-    tree_to_formula,
-)
+from feature_engineering.OpenFE.openfe import tree_to_formula
+from feature_engineering.RowWiseTransformations import RowWiseTransformations
+from utils.inference_utils import apply_saved_categorical_mapping, safe_production_transform
 
 
 class InferenceFrameService:

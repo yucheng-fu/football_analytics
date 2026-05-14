@@ -12,7 +12,7 @@ from utils.statics import (
     MODEL_SELECTION_EXPERIMENT_ID,
     lightgbm_model_name,
 )
-from utils.utils import (
+from utils.inference_utils import (
     fetch_categorical_mapping_by_run_id,
     fetch_fitted_column_transformer_by_run_id,
     fetch_model,

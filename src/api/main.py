@@ -9,7 +9,7 @@ from fastapi import FastAPI
 from api.services.inference_frame_service import InferenceFrameService
 from api.services.model_service import ModelService
 from api.v1.router import api_router
-from utils.utils import load_inference_bundle_from_local_artifacts
+from utils.inference_utils import load_inference_bundle_from_local_artifacts
 
 
 @asynccontextmanager
