@@ -32,7 +32,7 @@ jobs:
           
           # 2. Copy the folders into the NEW src directory
           cp -r src/api deploy_dir/src/
-          cp -r src/utils deploy_dir/src/
+          cp -r src/inference_utils deploy_dir/src/
           cp -r src/model deploy_dir/src/
           cp -r src/feature_engineering deploy_dir/src/
           
