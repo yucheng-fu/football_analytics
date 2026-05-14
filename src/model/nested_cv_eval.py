@@ -5,6 +5,8 @@ import os
 import random
 import pickle
 from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
+from catboost import CatBoostClassifier
 from sklearn.model_selection import StratifiedKFold
 from sklearn.feature_selection import RFE
 from sklearn.metrics import log_loss
@@ -21,7 +23,11 @@ from mlflow.utils.mlflow_tags import MLFLOW_PARENT_RUN_ID
 import numpy as np
 import logging
 from model.data_classes import OuterCVResults
-from optuna.integration import LightGBMPruningCallback
+from optuna.integration import (
+    LightGBMPruningCallback,
+    XGBoostPruningCallback,
+    CatBoostPruningCallback,
+)
 from optuna.visualization import plot_param_importances
 from lightgbm.callback import early_stopping
 import pandas as pd
@@ -570,6 +576,64 @@ class ModelCVEvaluator:
 
         return mean_score
 
+    def _ofe_transform(
+        self,
+        X_train_outer: pd.DataFrame,
+        y_train_outer: np.ndarray,
+        X_val_outer: pd.DataFrame,
+        i: int,
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, dict[str, str]]:
+        """Apply OpenFE transformations to the outer fold data and log the generated features and mappings.
+
+        Args:
+            X_train_outer (pd.DataFrame): Outer-fold training features.
+            y_train_outer (np.ndarray): Outer-fold training labels.
+            X_val_outer (pd.DataFrame): Outer-fold validation features.
+            i (int): Current outer fold index for logging purposes.
+
+        Returns:
+            Tuple[pd.DataFrame, pd.DataFrame, dict[str, str]]: _description_
+        """
+        self.logger.info(f"Fitting OpenFE on fold {i + 1}")
+        row_wise_features, column_wise_features = self.open_fe_transformations.fit(
+            X_train=X_train_outer,
+            y_train=y_train_outer,
+            task="classification",
+            categorical_features=self.categorical_columns,
+            feature_boosting=True,
+            n_jobs=self.n_jobs,
+        )
+
+        X_train_outer, X_val_outer, mapping = (
+            self.open_fe_transformations.apply_openfe_features(
+                X_train=X_train_outer,
+                X_val=X_val_outer,
+                features=row_wise_features,
+                n_jobs=self.n_jobs,
+            )
+        )
+
+        column_wise_mapping = {
+            f"ofe_col_{idx + 1}": tree_to_formula(feature)
+            for idx, feature in enumerate(column_wise_features)
+        }
+        formula_to_safe_name = {
+            formula: safe_name for safe_name, formula in column_wise_mapping.items()
+        }
+        full_mapping = {**mapping, **column_wise_mapping}
+
+        self._log_artifact(f"ofe_row_wise_features_fold_{i}", row_wise_features)
+        self._log_artifact(
+            f"ofe_column_wise_features_fold_{i}",
+            column_wise_features,
+        )
+        self._log_artifact(f"ofe_feature_mapping_fold_{i}", full_mapping)
+
+        for feat_name, formula in full_mapping.items():
+            self.logger.info(f"Feature: {feat_name:20} | Formula: {formula}")
+
+        return X_train_outer, X_val_outer, formula_to_safe_name
+
     def _hyperparameter_tuning(
         self,
         X_train_outer: pd.DataFrame,
@@ -800,52 +864,14 @@ class ModelCVEvaluator:
                     )
 
                     if self.use_ofe and self.open_fe_transformations is not None:
-                        self.logger.info(f"Fitting OpenFE on fold {i + 1}")
-                        row_wise_features, column_wise_features = (
-                            self.open_fe_transformations.fit(
-                                X_train=X_train_outer,
-                                y_train=y_train_outer,
-                                task="classification",
-                                categorical_features=self.categorical_columns,
-                                feature_boosting=True,
-                                n_jobs=self.n_jobs,
+                        X_train_outer, X_val_outer, formula_to_safe_name = (
+                            self._ofe_transform(
+                                X_train_outer=X_train_outer,
+                                y_train_outer=y_train_outer,
+                                X_val_outer=X_val_outer,
+                                i=i,
                             )
                         )
-
-                        X_train_outer, X_val_outer, mapping = (
-                            self.open_fe_transformations.apply_openfe_features(
-                                X_train=X_train_outer,
-                                X_val=X_val_outer,
-                                features=row_wise_features,
-                                n_jobs=self.n_jobs,
-                            )
-                        )
-
-                        column_wise_mapping = {
-                            f"ofe_col_{idx + 1}": tree_to_formula(feature)
-                            for idx, feature in enumerate(column_wise_features)
-                        }
-                        formula_to_safe_name = {
-                            formula: safe_name
-                            for safe_name, formula in column_wise_mapping.items()
-                        }
-                        full_mapping = {**mapping, **column_wise_mapping}
-
-                        self._log_artifact(
-                            f"ofe_row_wise_features_fold_{i}", row_wise_features
-                        )
-                        self._log_artifact(
-                            f"ofe_column_wise_features_fold_{i}",
-                            column_wise_features,
-                        )
-                        self._log_artifact(
-                            f"ofe_feature_mapping_fold_{i}", full_mapping
-                        )
-
-                        for feat_name, formula in full_mapping.items():
-                            self.logger.info(
-                                f"Feature: {feat_name:20} | Formula: {formula}"
-                            )
 
                     # 1. Perform full hyperparamter tuning
                     best_params = self._hyperparameter_tuning(

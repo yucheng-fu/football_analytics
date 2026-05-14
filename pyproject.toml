@@ -32,7 +32,9 @@ dependencies = [
     "shap==0.48.0",
     "kaleido==1.2.0",
     "fastapi[standard]==0.115.6",
-    "mplsoccer==1.2.4"
+    "mplsoccer==1.2.4",
+    "xgboost>=3.2.0",
+    "catboost>=1.2.10",
 ]
 
 [tool.setuptools]
