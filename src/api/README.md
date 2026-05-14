@@ -11,14 +11,6 @@ short_description: FastAPI endpoints
 # Start API
 `uv run fastapi dev main.py`
 
-## Pass Prediction Proxy Secrets
-Set these environment variables on the backend host:
-- `EXTERNAL_PASS_API_KEY`: API key used for `X-API-Key` to the external pass endpoint
-- `EXTERNAL_PASS_API_URL` (optional): defaults to `https://yuch0001-football-api.hf.space/predict`
-- `APP_CORS_ORIGINS` (optional): comma-separated origins, or `*`
-
-The frontend should call `/api/v1/pass-prediction/predict` and must not include API keys.
-
 # Deployment Pattern (No Runtime MLflow Dependency)
 1. Download artifacts before image build:
 `python -m api.scripts.download_inference_artifacts --tracking-uri <MLFLOW_TRACKING_URI> --output-dir src/api/artifacts --model-name "Final models_lightgbm" --model-alias production --final-models-experiment-id <FINAL_MODELS_EXPERIMENT_ID> --model-selection-experiment-id <MODEL_SELECTION_EXPERIMENT_ID>`
