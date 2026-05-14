@@ -34,7 +34,7 @@ jobs:
           cp -r src/api deploy_dir/src/
           cp -r src/model deploy_dir/src/
           cp -r src/feature_engineering deploy_dir/src/
-          cp -r src/utils/inference_utils.py deploy_dir/src/
+          cp -r src/utils/inference_utils.py deploy_dir/src/utils/
           
           # 3. Copy docker file and README (Dockerfile and config files)
           cp src/api/Dockerfile deploy_dir/
