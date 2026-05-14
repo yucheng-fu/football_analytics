@@ -29,6 +29,7 @@ jobs:
         run: |
           # 1. Create a temporary deployment directory with the src structure
           mkdir -p deploy_dir/src
+          mkdir -p deploy_dir/src/utils
           
           # 2. Copy the folders into the NEW src directory
           cp -r src/api deploy_dir/src/
