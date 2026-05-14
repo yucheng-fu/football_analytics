@@ -5,11 +5,9 @@ on:
     branches: [main]
     paths:
       - "src/api/**"
-      - "src/utils/**"
+      - "src/inference_utils/**"
       - "src/model/**"
       - "src/feature_engineering/**"
-      - "Dockerfile"
-      - "README.md"
       - "pyproject.toml"
       - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
@@ -38,9 +36,9 @@ jobs:
           cp -r src/model deploy_dir/src/
           cp -r src/feature_engineering deploy_dir/src/
           
-          # 3. Copy root files (Dockerfile and config files)
-          cp Dockerfile deploy_dir/
-          cp README.md deploy_dir/
+          # 3. Copy docker file and README (Dockerfile and config files)
+          cp src/api/Dockerfile deploy_dir/
+          cp src/api/README.md deploy_dir/
           
           # IMPORTANT: If you have a pyproject.toml, setup.py, or requirements.txt, 
           # you MUST copy them so pip knows how to install your app.
