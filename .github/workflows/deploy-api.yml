@@ -5,9 +5,9 @@ on:
     branches: [main]
     paths:
       - "src/api/**"
-      - "src/inference_utils/**"
       - "src/model/**"
       - "src/feature_engineering/**"
+      - "src/utils/inference_utils.py"
       - "pyproject.toml"
       - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
@@ -32,9 +32,9 @@ jobs:
           
           # 2. Copy the folders into the NEW src directory
           cp -r src/api deploy_dir/src/
-          cp -r src/inference_utils deploy_dir/src/
           cp -r src/model deploy_dir/src/
           cp -r src/feature_engineering deploy_dir/src/
+          cp -r src/utils/inference_utils.py deploy_dir/src/
           
           # 3. Copy docker file and README (Dockerfile and config files)
           cp src/api/Dockerfile deploy_dir/
