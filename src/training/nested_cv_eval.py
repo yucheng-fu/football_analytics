@@ -128,6 +128,51 @@ class ModelCVEvaluator:
 
         raise ValueError(f"Unsupported model type: {model_name}")
 
+    def _extract_category_schema(self, df: pd.DataFrame) -> dict[str, pd.Index]:
+        """Extract and record category levels from categorical columns.
+
+        Args:
+            df (pd.DataFrame): Input dataframe to extract categories from.
+
+        Returns:
+            dict[str, pd.Index]: Mapping of categorical column names to their category levels.
+        """
+        cat_cols = df.select_dtypes(include=["category"]).columns
+        return {col: df[col].cat.categories for col in cat_cols}
+
+    def _apply_category_schema(
+        self, df: pd.DataFrame, schema: dict[str, pd.Index]
+    ) -> pd.DataFrame:
+        """Apply a predefined categorical schema to a dataframe.
+
+        Args:
+            df (pd.DataFrame): Input dataframe to apply schema to.
+            schema (dict[str, pd.Index]): Mapping of column names to their category levels.
+
+        Returns:
+            pd.DataFrame: Copy of dataframe with categorical schema applied.
+        """
+        df_copy = df.copy()
+        for col, categories in schema.items():
+            if col in df_copy.columns:
+                df_copy[col] = pd.Categorical(df_copy[col], categories=categories)
+        return df_copy
+
+    def _encode_categories_to_codes(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Convert categorical columns to their underlying integer codes.
+
+        Args:
+            df (pd.DataFrame): Input dataframe with categorical columns.
+
+        Returns:
+            pd.DataFrame: Copy of dataframe with categorical columns encoded as integers.
+        """
+        df_copy = df.copy()
+        cat_cols = df_copy.select_dtypes(include=["category"]).columns
+        for col in cat_cols:
+            df_copy[col] = df_copy[col].cat.codes
+        return df_copy
+
     def _categorical_feature_names(self, X_pd: pd.DataFrame) -> list[str]:
         """Return categorical column names that are present in a dataframe.
 
@@ -201,12 +246,6 @@ class ModelCVEvaluator:
             )
 
         return params
-
-
-
-
-
-
 
     def _augment_params_with_boosting_rounds(self, best_params: dict) -> dict:
         """Add boosted-rounds reporting fields for MLflow logging.
@@ -329,13 +368,15 @@ class ModelCVEvaluator:
         ):
             X_val_outer = column_transformer.transform(X_val_outer)
 
+        # 2. Choose selected features
         X_val_outer_selected = X_val_outer[selected_features]
-        for col, cats in category_schema.items():
-            if col in X_val_outer_selected.columns:
-                X_val_outer_selected[col] = pd.Categorical(
-                    X_val_outer_selected[col], categories=cats
-                )
 
+        # 3. Enforce training-time category schema to ensure correct integer encoding
+        X_val_outer_selected = self._apply_category_schema(
+            X_val_outer_selected, category_schema
+        )
+
+        # 4. Predict and evaluate
         y_pred_proba = self.wrapper.predict_proba(X_val_outer_selected)
 
         outer_fold_log_loss = log_loss(y_val_outer, y_pred_proba)
@@ -384,22 +425,13 @@ class ModelCVEvaluator:
         )
 
         # Build category schema from training data
-        current_categories = X_train.select_dtypes(
-            include=["category"]
-        ).columns.tolist()
-        category_schema_rfe = {
-            col: X_train[col].cat.categories for col in current_categories
-        }
+        category_schema_rfe = self._extract_category_schema(X_train)
 
         # Enforce training-time categories before RFE to ensure consistency
-        X_train_rfe = X_train.copy()
-        for col, cats in category_schema_rfe.items():
-            if col in X_train_rfe.columns:
-                X_train_rfe[col] = pd.Categorical(X_train_rfe[col], categories=cats)
+        X_train_rfe = self._apply_category_schema(X_train, category_schema_rfe)
 
         # Convert to codes for RFE
-        for col in X_train_rfe.select_dtypes(include=["category"]).columns:
-            X_train_rfe[col] = X_train_rfe[col].cat.codes
+        X_train_rfe = self._encode_categories_to_codes(X_train_rfe)
 
         rfe.fit(X_train_rfe, y_train)
         selected_features = np.array(X_train.columns[rfe.support_])
@@ -546,12 +578,16 @@ class ModelCVEvaluator:
         }
         full_mapping = {**mapping, **column_wise_mapping}
 
-        self.mlflow_handler.log_artifact_pickle(row_wise_features, f"ofe_row_wise_features_fold_{i}")
+        self.mlflow_handler.log_artifact_pickle(
+            row_wise_features, f"ofe_row_wise_features_fold_{i}"
+        )
         self.mlflow_handler.log_artifact_pickle(
             column_wise_features,
             f"ofe_column_wise_features_fold_{i}",
         )
-        self.mlflow_handler.log_artifact_pickle(full_mapping, f"ofe_feature_mapping_fold_{i}")
+        self.mlflow_handler.log_artifact_pickle(
+            full_mapping, f"ofe_feature_mapping_fold_{i}"
+        )
 
         for feat_name, formula in full_mapping.items():
             self.logger.info(f"Feature: {feat_name:20} | Formula: {formula}")
@@ -653,12 +689,7 @@ class ModelCVEvaluator:
         )
 
         # 2. Categorical Handling
-        current_categories = X_train_selected.select_dtypes(
-            include=["category"]
-        ).columns.tolist()
-        category_schema = {
-            col: X_train_selected[col].cat.categories for col in current_categories
-        }
+        category_schema = self._extract_category_schema(X_train_selected)
 
         # 3. Model Training
         self.wrapper.fit(

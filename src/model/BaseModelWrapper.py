@@ -24,7 +24,7 @@ class BaseModelWrapper(ABC):
         pass
 
     @abstractmethod
-    def fetch_base_estimator(self):
+    def fetch_base_estimator(self) -> Any:
         """Return a base estimator of the model type"""
         pass
 
