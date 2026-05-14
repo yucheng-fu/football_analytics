@@ -23,6 +23,7 @@ xg_scale_factor = 400
 # model names
 xgboost_model_name = "xgboost"
 lightgbm_model_name = "lightgbm"
+catboost_model_name = "catboost"
 
 # mlflow
 tracking_uri = "http://127.0.0.1:8080/"

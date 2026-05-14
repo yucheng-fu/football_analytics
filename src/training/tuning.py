@@ -8,7 +8,7 @@ import mlflow
 import numpy as np
 import logging
 from model.data_classes import OuterCVResults
-from model.nested_cv_eval import ModelCVEvaluator
+from training.nested_cv_eval import ModelCVEvaluator
 from feature_engineering.OpenFE.utils import tree_to_formula
 from feature_engineering.OpenFE.FeatureGenerator import Node
 from utils.utils import plot_feature_importance, plot_loss_curve

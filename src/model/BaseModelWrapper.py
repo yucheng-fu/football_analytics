@@ -6,8 +6,9 @@ from typing import Tuple, Dict, Any, Optional
 
 
 class BaseModelWrapper(ABC):
-    def __init__(self, seed: int):
+    def __init__(self, seed: int, early_stopping_rounds: int = 20):
         self.seed = seed
+        self.early_stopping_rounds = early_stopping_rounds
         self.model = None
 
     @abstractmethod
@@ -20,6 +21,11 @@ class BaseModelWrapper(ABC):
         Returns:
             Dict[str, Any]: Dictionary of hyperparameters to be used for model training
         """
+        pass
+
+    @abstractmethod
+    def fetch_base_estimator(self):
+        """Return a base estimator of the model type"""
         pass
 
     @abstractmethod
