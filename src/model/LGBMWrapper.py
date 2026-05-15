@@ -33,15 +33,16 @@ class LGBMWrapper(BaseModelWrapper):
             "reg_lambda": trial.suggest_float(
                 "reg_lambda", 1e-4, 0.3, log=True
             ),  # L2 regularisation
-            "metric": "binary_logloss",  # evaluation metric
-            "random_state": self.seed,  # seed for reproducibility
-            "verbose": -1,  # suppress warnings and info
         }
         return params
 
     def fetch_base_estimator(self, params: Dict[str, Any] = None) -> LGBMClassifier:
         return LGBMClassifier(
-            verbose=-1, importance_type="gain", random_state=self.seed, **params
+            metric="binary_logloss",
+            verbose=-1,
+            importance_type="gain",
+            random_state=self.seed,
+            **params,
         )
 
     def fit(

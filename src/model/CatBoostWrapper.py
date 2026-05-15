@@ -20,15 +20,19 @@ class CatBoostWrapper(BaseModelWrapper):
             "reg_lambda": trial.suggest_float(
                 "reg_lambda", 1e-4, 0.3, log=True
             ),  # L2 regularisation
-            "eval_metric": "Logloss",  # evaluation metric
-            "random_seed": self.seed,  # seed for reproducibility
-            "verbose": False,  # suppress warnings and info
         }
 
         return params
 
     def fetch_base_estimator(self, params: Dict[str, Any] = None) -> CatBoostClassifier:
-        return CatBoostClassifier(verbose=False, random_state=self.seed, **params)
+        return CatBoostClassifier(
+            eval_metric="Logloss",
+            allow_writing_files=False,
+            save_snapshot=False,
+            random_state=self.seed,
+            logging_level="Silent",
+            **params,
+        )
 
     def fit(
         self,

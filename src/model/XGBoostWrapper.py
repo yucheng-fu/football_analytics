@@ -32,15 +32,18 @@ class XGBoostWrapper(BaseModelWrapper):
             "reg_lambda": trial.suggest_float(
                 "reg_lambda", 1e-4, 0.3, log=True
             ),  # L2 regularisation
-            "eval_metric": "logloss",  # evaluation metric
-            "random_state": self.seed,  # seed for reproducibility
-            "verbosity": 0,  # 0 for silent, 1 for warning
-            "tree_method": "hist",  # Use histogram-based algorithm for faster training on large datasets (default)
         }
         return params
 
     def fetch_base_estimator(self, params: Dict[str, Any] = None) -> XGBClassifier:
-        return XGBClassifier(verbosity=0, random_state=self.seed, **params)
+        return XGBClassifier(
+            tree_method="hist",
+            eval_metric="logloss",
+            verbosity=0,
+            random_state=self.seed,
+            enable_categorical=True,
+            **params,
+        )
 
     def fit(
         self,
@@ -53,18 +56,17 @@ class XGBoostWrapper(BaseModelWrapper):
         trial=None,
     ):
         self.model = self.fetch_base_estimator(params=params)
-        callbacks = (
-            [XGBoostPruningCallback(trial, "validation_0-logloss")] if trial else None
-        )
+        if use_early_stopping and X_val is not None and y_val is not None:
+            self.model.set_params(early_stopping_rounds=self.early_stopping_rounds)
+
+        if trial:
+            callbacks = [XGBoostPruningCallback(trial, "validation_0-logloss")]
+            self.model.set_params(callbacks=callbacks)
 
         self.model.fit(
             X_train,
             y_train,
             eval_set=[(X_val, y_val)] if X_val is not None else None,
-            early_stopping_rounds=(
-                self.early_stopping_rounds if use_early_stopping else None
-            ),
-            callbacks=callbacks,
             verbose=False,
         )
 

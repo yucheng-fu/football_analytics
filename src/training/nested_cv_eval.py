@@ -31,7 +31,9 @@ from feature_engineering.RowWiseTransformations import RowWiseTransformations
 from feature_engineering.OpenFETransformations import OpenFETransformations
 from feature_engineering.OpenFE.FeatureGenerator import Node
 from feature_engineering.OpenFE.utils import tree_to_formula
-from model.LGBMWrapper import LGBMWrapper, XGBoostWrapper, CatBoostWrapper
+from model.LGBMWrapper import LGBMWrapper
+from model.XGBoostWrapper import XGBoostWrapper
+from model.CatBoostWrapper import CatBoostWrapper
 
 
 class ModelCVEvaluator:
@@ -84,7 +86,7 @@ class ModelCVEvaluator:
         )
         self.ohe_columns = ohe_columns if ohe_columns is not None else []
         self.seed = 165
-        self.n_jobs = max(1, os.cpu_count() - 8) or 1
+        self.n_jobs = max(1, os.cpu_count() - 4) or 1
         self.inner_cv = StratifiedKFold(
             n_splits=self.n_inner_splits, shuffle=True, random_state=self.seed
         )
@@ -92,7 +94,7 @@ class ModelCVEvaluator:
             n_splits=self.n_outer_splits, shuffle=True, random_state=self.seed
         )
         self._set_global_seed()
-        self.wrapper = self._fetch_model_wrapper(model_type=self.model_type)
+        self.wrapper = self._fetch_model_wrapper(model_name=self.model_type)
         self.mlflow_handler = MLflowHandler(
             tracking_uri=statics.tracking_uri,
             experiment_name=experiment_name,
@@ -619,7 +621,7 @@ class ModelCVEvaluator:
         self.logger.info("Starting full hyperparameter tuning...")
 
         if not self.use_hyperparameter_tuning:
-            return (None, {})
+            return {}
 
         sampler = optuna.samplers.TPESampler(seed=self.seed)
         study = optuna.create_study(direction="minimize", sampler=sampler)
@@ -676,7 +678,7 @@ class ModelCVEvaluator:
             Tuple[Union[LGBMClassifier, XGBClassifier, CatBoostClassifier], np.ndarray, dict[str, pd.Index]]: Fitted model,
                 selected feature names, and category schema captured from training data.
         """
-        fit_params = params.copy()
+        fit_params = params
 
         # 1. Feature selection
         X_train_selected, X_val_selected, selected_features = (
@@ -732,7 +734,7 @@ class ModelCVEvaluator:
         """
         self.logger.info("Fitting final model with best hyperparameters...")
 
-        fit_params = best_params.copy()
+        fit_params = best_params
 
         # 1. Feature Engineering
         column_transformer = None
