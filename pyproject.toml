@@ -33,7 +33,7 @@ dependencies = [
     "kaleido==1.2.0",
     "fastapi[standard]==0.115.6",
     "mplsoccer==1.2.4",
-    "xgboost>=3.2.0",
+    "xgboost==2.1.4",
     "catboost>=1.2.10",
 ]
 
