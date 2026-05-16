@@ -887,7 +887,9 @@ def load_inference_bundle_from_local_artifacts(
     selected_features_path = os.path.join(artifact_dir, "selected_features.json")
     categorical_mapping_path = os.path.join(artifact_dir, "categorical_mapping.json")
 
-    resolved_params_path = params_path if os.path.exists(params_path) else best_params_path
+    resolved_params_path = (
+        params_path if os.path.exists(params_path) else best_params_path
+    )
     resolved_best_features_path = (
         best_features_path
         if os.path.exists(best_features_path)
@@ -921,9 +923,7 @@ def load_inference_bundle_from_local_artifacts(
         column_wise_features = pickle.load(column_wise_features_file)
     with open(resolved_params_path, "r", encoding="utf-8") as params_file:
         params = json.load(params_file)
-    with open(
-        resolved_best_features_path, "r", encoding="utf-8"
-    ) as best_features_file:
+    with open(resolved_best_features_path, "r", encoding="utf-8") as best_features_file:
         best_features = np.array(json.load(best_features_file))
     with open(
         categorical_mapping_path, "r", encoding="utf-8"

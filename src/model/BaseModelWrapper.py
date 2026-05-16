@@ -9,7 +9,6 @@ class BaseModelWrapper(ABC):
     def __init__(self, seed: int, early_stopping_rounds: int = 20):
         self.seed = seed
         self.early_stopping_rounds = early_stopping_rounds
-        self.model = None
 
     @abstractmethod
     def get_optuna_params(self, trial: optuna.Trial) -> Dict[str, Any]:
@@ -62,10 +61,3 @@ class BaseModelWrapper(ABC):
             np.ndarray: Predicted probabilities for each class
         """
         return self.model.predict_proba(X)
-
-    @property
-    @abstractmethod
-    def best_iteration(self) -> Optional[int]:
-        """
-        Return the best iteration for early stopping if applicable."""
-        pass

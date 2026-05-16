@@ -55,21 +55,19 @@ class XGBoostWrapper(BaseModelWrapper):
         params=None,
         trial=None,
     ):
-        self.model = self.fetch_base_estimator(params=params)
+        model = self.fetch_base_estimator(params=params)
         if use_early_stopping and X_val is not None and y_val is not None:
-            self.model.set_params(early_stopping_rounds=self.early_stopping_rounds)
+            model.set_params(early_stopping_rounds=self.early_stopping_rounds)
 
         if trial:
             callbacks = [XGBoostPruningCallback(trial, "validation_0-logloss")]
-            self.model.set_params(callbacks=callbacks)
+            model.set_params(callbacks=callbacks)
 
-        self.model.fit(
+        model.fit(
             X_train,
             y_train,
             eval_set=[(X_val, y_val)] if X_val is not None else None,
             verbose=False,
         )
 
-    @property
-    def best_iteration(self):
-        return getattr(self.model, "best_iteration", None)
+        return model

@@ -60,7 +60,7 @@ class MLflowHandler:
                 pickle.dump(obj, f)
             mlflow.log_artifact(
                 local_path=tmp_file_path,
-                artifact_path=f"{artifact_path}/{name}",
+                artifact_path=artifact_path,
             )
 
     def log_model(
@@ -135,7 +135,7 @@ class MLflowHandler:
             name=model_name,
         )
         version = registered_model.version
-        
+
         client = MlflowClient()
         client.set_registered_model_alias(
             name=model_name,
@@ -148,5 +148,5 @@ class MLflowHandler:
             key="alias",
             value=alias,
         )
-        
+
         return version

@@ -11,12 +11,12 @@ from mlflow.tracking import MlflowClient
 
 from feature_engineering.OpenFE.openfe import tree_to_formula
 from feature_engineering.RowWiseTransformations import RowWiseTransformations
-from model.data_classes import LGBMParams, OuterCVResults
+from model.data_classes import LGBMParams, XGBoostParams, CatBoostParams, OuterCVResults
 from utils.statics import lightgbm_model_name, tracking_uri
 
 
 def get_parent_run_id_from_experiment(
-    result: OuterCVResults | None, experiment_id: str
+    result: OuterCVResults | None, experiment_id: str, model_type: str | None = None
 ) -> str:
     """Get parent run ID from experiment."""
     mlflow.set_tracking_uri(tracking_uri)
@@ -25,8 +25,12 @@ def get_parent_run_id_from_experiment(
     if result is not None:
         parent_run_id = client.get_run(result.parent_run_id).info.run_id
     else:
+        filter_string = []
+        if model_type:
+            filter_string.append("tags.model_type = '{}'".format(model_type))
         runs = client.search_runs(
             experiment_ids=[experiment_id],
+            filter_string=" and ".join(filter_string) if filter_string else None,
             order_by=["attributes.start_time DESC"],
         )
         parent_run_id = next(
@@ -45,11 +49,27 @@ def get_best_params_and_features_from_parent_run_id(
     parent_run = client.get_run(parent_run_id)
 
     raw_params = parent_run.data.params
+    tags = parent_run.data.tags
+
+    model_type = tags.get("model_type")
+    if not model_type:
+        raise ValueError(f"Parent run {parent_run_id} is missing a 'model_type' tag.")
+
+    schema_map = {
+        "lightgbm": LGBMParams,
+        "xgboost": XGBoostParams,
+        "catboost": CatBoostParams,
+    }
+
+    param_schema = schema_map.get(model_type.lower())
     best_params = dict(raw_params)
-    lgbm_params = LGBMParams(
-        **{k: raw_params[k] for k in LGBMParams.model_fields if k in raw_params}
-    )
-    best_params.update(lgbm_params.model_dump())
+
+    validated_fields = {
+        k: raw_params[k] for k in param_schema.model_fields if k in raw_params
+    }
+    typed_params = param_schema(**validated_fields)
+
+    best_params.update(typed_params.model_dump())
 
     best_features = np.array(parent_run.data.tags["selected_features"].split(","))
 
@@ -185,7 +205,9 @@ def load_inference_bundle_from_local_artifacts(
     selected_features_path = os.path.join(artifact_dir, "selected_features.json")
     categorical_mapping_path = os.path.join(artifact_dir, "categorical_mapping.json")
 
-    resolved_params_path = params_path if os.path.exists(params_path) else best_params_path
+    resolved_params_path = (
+        params_path if os.path.exists(params_path) else best_params_path
+    )
     resolved_best_features_path = (
         best_features_path
         if os.path.exists(best_features_path)
@@ -219,9 +241,7 @@ def load_inference_bundle_from_local_artifacts(
         column_wise_features = pickle.load(column_wise_features_file)
     with open(resolved_params_path, "r", encoding="utf-8") as params_file:
         params = json.load(params_file)
-    with open(
-        resolved_best_features_path, "r", encoding="utf-8"
-    ) as best_features_file:
+    with open(resolved_best_features_path, "r", encoding="utf-8") as best_features_file:
         best_features = np.array(json.load(best_features_file))
     with open(
         categorical_mapping_path, "r", encoding="utf-8"

@@ -1,9 +1,7 @@
-from typing import Callable, Tuple, Optional, Any, List, Union
-import tempfile
+from typing import Callable, Tuple, Optional, List, Union, Any
 import polars as pl
 import os
 import random
-import pickle
 from lightgbm import LGBMClassifier
 from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
@@ -12,13 +10,11 @@ from sklearn.feature_selection import RFE
 from sklearn.metrics import log_loss
 from sklearn import clone
 import optuna
-import matplotlib.pyplot as plt
 import utils.statics as statics
 from utils.utils import plot_feature_importance, plot_calibration_curve
 from utils.mlflow_handler import MLflowHandler
 import mlflow
 from mlflow.entities import Run
-from mlflow.models import infer_signature
 from mlflow.tracking import MlflowClient
 from mlflow.utils.mlflow_tags import MLFLOW_PARENT_RUN_ID
 import numpy as np
@@ -242,28 +238,84 @@ class ModelCVEvaluator:
         params = self.wrapper.get_optuna_params(trial)
 
         # RFE
-        if self.use_feature_engineering:
+        if self.use_feature_selection:
             params["n_features_to_select"] = trial.suggest_float(
                 "n_features_to_select", 0.5, 1.0
             )
 
         return params
 
-    def _augment_params_with_boosting_rounds(self, best_params: dict) -> dict:
+    def get_best_iteration(
+        self,
+        model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier],
+    ) -> Optional[int]:
+        """
+        Safely extracts the best early-stopping iteration from LightGBM,
+        XGBoost, or CatBoost Scikit-Learn API classifier instances.
+
+        Args:
+            model (Union[LGBMClassifier, XGBClassifier, CatBoostClassifier]): The fitted model instance.
+
+        Returns:
+            Optional[int]: The best iteration index (0-indexed),
+                        or None if early stopping wasn't triggered/supported.
+        """
+        model_classname = type(model).__name__
+
+        if model_classname == "LGBMClassifier":
+            return getattr(model, "best_iteration_", None)
+
+        elif model_classname == "XGBClassifier":
+            return getattr(model, "best_iteration", None)
+
+        elif model_classname == "CatBoostClassifier":
+            if hasattr(model, "get_best_iteration"):
+                return model.get_best_iteration()
+
+        return None
+
+    def _augment_params_with_boosting_rounds(
+        self,
+        model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier],
+        best_params: dict,
+    ) -> dict:
         """Add boosted-rounds reporting fields for MLflow logging.
 
         Args:
+            model (Union[LGBMClassifier, XGBClassifier, CatBoostClassifier]): The fitted model.
             best_params (dict): Tuned parameter dictionary.
 
         Returns:
             dict: Copy of params including used-rounds metadata when available.
         """
         logged_params = best_params.copy()
-        best_iteration = self.wrapper.best_iteration
+        best_iteration = self.get_best_iteration(model)
 
         if best_iteration:
             logged_params["n_estimators_used"] = int(best_iteration)
         return logged_params
+
+    def _log_oof_predictions(
+        self,
+        outer_cv_results: OuterCVResults,
+        val_idx: np.ndarray,
+        predictions: np.ndarray,
+    ) -> None:
+        """Store out-of-fold predictions for an outer fold in the results object.
+
+        Args:
+            outer_cv_results (OuterCVResults): The results object to store predictions in.
+            val_idx (np.ndarray): The indices of the validation samples for the current outer fold.
+            predictions (np.ndarray): The predicted probabilities for the validation set of the current fold.
+        """
+        if outer_cv_results.out_of_fold_predictions.ndim == 1:
+            outer_cv_results.out_of_fold_predictions[val_idx] = predictions[
+                :, 1
+            ]  # Store positive for binary classification
+        else:
+            outer_cv_results.out_of_fold_predictions[val_idx, :] = (
+                predictions  # Store all class probabilities for multiclass classification
+            )
 
     def _append_and_log_metrics_and_params(
         self,
@@ -345,12 +397,13 @@ class ModelCVEvaluator:
 
     def _eval_validation_loss(
         self,
+        model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier],
         X_val_outer: pd.DataFrame,
         y_val_outer: np.ndarray,
         selected_features: np.ndarray,
         category_schema: dict[str, pd.Index],
         column_transformer: Optional[ColumnTransformer],
-    ) -> float:
+    ) -> Tuple[float, np.ndarray]:
         """Evaluate the fitted model on an outer validation fold.
 
         Args:
@@ -379,12 +432,12 @@ class ModelCVEvaluator:
         )
 
         # 4. Predict and evaluate
-        y_pred_proba = self.wrapper.predict_proba(X_val_outer_selected)
+        y_pred_proba = model.predict_proba(X_val_outer_selected)
 
         outer_fold_log_loss = log_loss(y_val_outer, y_pred_proba)
 
         self.mlflow_handler.log_model(
-            model=self.wrapper.model,
+            model=model,
             X_data=X_val_outer_selected,
             y_pred=y_pred_proba,
             model_type=self.model_type,
@@ -395,7 +448,7 @@ class ModelCVEvaluator:
             fig = plot_calibration_curve(y_val_outer, y_pred_proba)
             self.mlflow_handler.log_figure(fig=fig, name="calibration_curve")
 
-        return outer_fold_log_loss
+        return outer_fold_log_loss, y_pred_proba
 
     def _get_selected_features(
         self,
@@ -469,6 +522,32 @@ class ModelCVEvaluator:
 
         return rfe
 
+    def _extract_validation_loss(
+        self, model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier]
+    ) -> float:
+        """
+        Extracts the final inner validation fold loss value from
+        the model's evals_result_ dictionary, tailored to each framework.
+        """
+        model_classname = type(model).__name__
+        res = getattr(model, "evals_result_", {})
+
+        # 1. LightGBM
+        if model_classname == "LGBMClassifier":
+            return float(res["valid_0"]["binary_logloss"][-1])
+
+        # 2. XGBoost
+        elif model_classname == "XGBClassifier":
+            # XGBoost uses 'logloss' for binary classification
+            return float(res["validation_0"]["logloss"][-1])
+
+        # 3. CatBoost
+        elif model_classname == "CatBoostClassifier":
+            # CatBoost uses 'validation' and capitalizes 'Logloss'
+            return float(res["validation"]["Logloss"][-1])
+
+        raise ValueError(f"Unknown framework model: {model_classname}")
+
     def _objective(
         self,
         trial: optuna.trial.Trial,
@@ -526,9 +605,7 @@ class ModelCVEvaluator:
                 use_early_stopping=False,
             )
 
-            inner_fold_scores.append(
-                model.evals_result_["valid_0"]["binary_logloss"][-1]
-            )
+            inner_fold_scores.append(self._extract_validation_loss(model=model))
 
         mean_score = np.mean(inner_fold_scores)
 
@@ -540,7 +617,7 @@ class ModelCVEvaluator:
         y_train_outer: np.ndarray,
         X_val_outer: pd.DataFrame,
         i: int,
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, dict[str, str]]:
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, List[Node], dict[str, str]]:
         """Apply OpenFE transformations to the outer fold data and log the generated features and mappings.
 
         Args:
@@ -550,7 +627,7 @@ class ModelCVEvaluator:
             i (int): Current outer fold index for logging purposes.
 
         Returns:
-            Tuple[pd.DataFrame, pd.DataFrame, dict[str, str]]: _description_
+            Tuple[pd.DataFrame, pd.DataFrame, List[Node], dict[str, str]]: _description_
         """
         self.logger.info(f"Fitting OpenFE on fold {i + 1}")
         row_wise_features, column_wise_features = self.open_fe_transformations.fit(
@@ -594,7 +671,7 @@ class ModelCVEvaluator:
         for feat_name, formula in full_mapping.items():
             self.logger.info(f"Feature: {feat_name:20} | Formula: {formula}")
 
-        return X_train_outer, X_val_outer, formula_to_safe_name
+        return X_train_outer, X_val_outer, column_wise_features, formula_to_safe_name
 
     def _hyperparameter_tuning(
         self,
@@ -678,6 +755,7 @@ class ModelCVEvaluator:
             Tuple[Union[LGBMClassifier, XGBClassifier, CatBoostClassifier], np.ndarray, dict[str, pd.Index]]: Fitted model,
                 selected feature names, and category schema captured from training data.
         """
+        local_wrapper = self._fetch_model_wrapper(model_name=self.model_type)
         fit_params = params
 
         # 1. Feature selection
@@ -694,7 +772,7 @@ class ModelCVEvaluator:
         category_schema = self._extract_category_schema(X_train_selected)
 
         # 3. Model Training
-        self.wrapper.fit(
+        model = local_wrapper.fit(
             X_train=X_train_selected,
             y_train=y_train,
             X_val=X_val_selected,
@@ -704,7 +782,7 @@ class ModelCVEvaluator:
             trial=trial,
         )
 
-        return self.wrapper.model, selected_features, category_schema
+        return model, selected_features, category_schema
 
     def _fit_final_model(
         self,
@@ -730,7 +808,7 @@ class ModelCVEvaluator:
 
         Returns:
             Tuple[Union[LGBMClassifier, XGBClassifier, CatBoostClassifier], np.ndarray, dict[str, pd.Index], ColumnTransformer | None]:
-                Final model, selected feature names, category schema, and fitted transformer.
+                Final model classifier, selected feature names, category schema, and fitted transformer.
         """
         self.logger.info("Fitting final model with best hyperparameters...")
 
@@ -755,7 +833,6 @@ class ModelCVEvaluator:
                 use_early_stopping=True,
             )
         )
-
         if self.log_feature_importance:
             fig = plot_feature_importance(
                 X_train=X_train_outer[selected_features], model=final_model
@@ -777,10 +854,10 @@ class ModelCVEvaluator:
             OuterCVResults: Aggregated per-fold metrics, params, selected features,
                 run ids, and parent run id.
         """
-        outer_cv_results = OuterCVResults()
         self._setup_mlflow()
         X_train_pd = X_train.to_pandas()
         y_train_np = y_train.to_numpy().ravel()
+        outer_cv_results = OuterCVResults(n_samples=len(y_train_np))
 
         # Cast to categorical dtype
         X_train_pd = self._apply_categorical_dtypes(X_train_pd)
@@ -819,13 +896,16 @@ class ModelCVEvaluator:
                     )
 
                     if self.use_ofe and self.open_fe_transformations is not None:
-                        X_train_outer, X_val_outer, formula_to_safe_name = (
-                            self._ofe_transform(
-                                X_train_outer=X_train_outer,
-                                y_train_outer=y_train_outer,
-                                X_val_outer=X_val_outer,
-                                i=i,
-                            )
+                        (
+                            X_train_outer,
+                            X_val_outer,
+                            column_wise_features,
+                            formula_to_safe_name,
+                        ) = self._ofe_transform(
+                            X_train_outer=X_train_outer,
+                            y_train_outer=y_train_outer,
+                            X_val_outer=X_val_outer,
+                            i=i,
                         )
 
                     # 1. Perform full hyperparamter tuning
@@ -851,8 +931,9 @@ class ModelCVEvaluator:
                         open_fe_feature_name_mapping=formula_to_safe_name,
                     )
 
-                    # 3. Evaluate final model on the outer validaiton fold and log final model to model registry
-                    outer_fold_log_loss = self._eval_validation_loss(
+                    # 3. Evaluate final model on the outer validation fold and log final model to model registry
+                    outer_fold_log_loss, y_pred_proba = self._eval_validation_loss(
+                        model=final_model,
                         X_val_outer=X_val_outer,
                         y_val_outer=y_val_outer,
                         selected_features=selected_features,
@@ -861,10 +942,16 @@ class ModelCVEvaluator:
                     )
 
                     logged_params = self._augment_params_with_boosting_rounds(
-                        best_params=best_params
+                        best_params=best_params, model=final_model
                     )
 
                     # 4. Log metrics and parameters to MLFlow
+                    self._log_oof_predictions(
+                        outer_cv_results=outer_cv_results,
+                        val_idx=val_idx,
+                        predictions=y_pred_proba,
+                    )
+
                     self._append_and_log_metrics_and_params(
                         outer_cv_results=outer_cv_results,
                         selected_features=selected_features,

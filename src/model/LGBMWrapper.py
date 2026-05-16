@@ -55,7 +55,7 @@ class LGBMWrapper(BaseModelWrapper):
         params: Dict[str, Any] = None,
         trial: optuna.Trial = None,
     ):
-        self.model = self.fetch_base_estimator(params=params)
+        model = self.fetch_base_estimator(params=params)
         cat_cols = X_train.select_dtypes(include=["category"]).columns.tolist()
 
         callbacks = []
@@ -68,7 +68,7 @@ class LGBMWrapper(BaseModelWrapper):
                 )
             )
 
-        self.model.fit(
+        model.fit(
             X_train,
             y_train,
             eval_set=[(X_val, y_val)] if X_val is not None else None,
@@ -77,6 +77,4 @@ class LGBMWrapper(BaseModelWrapper):
             categorical_feature=cat_cols or "auto",
         )
 
-    @property
-    def best_iteration(self):
-        return getattr(self.model, "best_iteration_", None)
+        return model

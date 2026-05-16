@@ -3,7 +3,6 @@ import pandas as pd
 import numpy as np
 
 from catboost import CatBoostClassifier
-from lightgbm.callback import early_stopping
 from optuna.integration import CatBoostPruningCallback
 from typing import Dict, Any
 from model.BaseModelWrapper import BaseModelWrapper
@@ -44,12 +43,12 @@ class CatBoostWrapper(BaseModelWrapper):
         params=None,
         trial=None,
     ):
-        self.model = self.fetch_base_estimator(params=params)
+        model = self.fetch_base_estimator(params=params)
         cat_cols = X_train.select_dtypes(include=["category"]).columns.tolist()
 
         callbacks = [CatBoostPruningCallback(trial, "Logloss")] if trial else None
 
-        self.model.fit(
+        model.fit(
             X_train,
             y_train,
             eval_set=(X_val, y_val) if X_val is not None else None,
@@ -60,6 +59,4 @@ class CatBoostWrapper(BaseModelWrapper):
             callbacks=callbacks,
         )
 
-    @property
-    def best_iteration(self):
-        return self.model.get_best_iteration()
+        return model
