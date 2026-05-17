@@ -1,0 +1,8 @@
+{
+  "created_at_utc": "2026-05-17T21:03:19.367453+00:00",
+  "model_uri": "models:/Final models_catboost@production",
+  "final_model_run_id": "5cdd025e33d44b70a8cdf39d94ddf483",
+  "tuning_run_id": "08af3c5933a24d88a6a114583e5a27a5",
+  "final_models_experiment_id": "441823692328196814",
+  "model_selection_experiment_id": "428168727943543105"
+}

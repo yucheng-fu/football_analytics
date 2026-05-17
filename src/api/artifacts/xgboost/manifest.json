@@ -1,0 +1,8 @@
+{
+  "created_at_utc": "2026-05-17T21:03:03.490073+00:00",
+  "model_uri": "models:/Final models_xgboost@production",
+  "final_model_run_id": "b87505238ee44421a45b1b3a07d70ed0",
+  "tuning_run_id": "841bf22f1cb44db1b6f4c8a345b8ce87",
+  "final_models_experiment_id": "441823692328196814",
+  "model_selection_experiment_id": "428168727943543105"
+}
