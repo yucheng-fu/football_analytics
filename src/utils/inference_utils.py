@@ -206,6 +206,7 @@ def fetch_fitted_column_transformer_by_run_id(
 
 def load_inference_bundle_from_local_artifacts(
     artifact_dir: str = "src/api/artifacts",
+    model_type: str = lightgbm_model_name,
 ) -> dict[str, Any]:
     """Load inference artifacts from local files bundled with the API."""
     model_dir = os.path.join(artifact_dir, "model")
@@ -245,7 +246,16 @@ def load_inference_bundle_from_local_artifacts(
             "`python -m api.scripts.download_inference_artifacts --tracking-uri <MLFLOW_TRACKING_URI>`"
         )
 
-    model = mlflow.lightgbm.load_model(model_dir)
+    model_loader_mapping = {
+        lightgbm_model_name: mlflow.lightgbm.load_model,
+        xgboost_model_name: mlflow.xgboost.load_model,
+        catboost_model_name: mlflow.catboost.load_model,
+    }
+    model_loader = model_loader_mapping.get(model_type)
+    if model_loader is None:
+        raise ValueError(f"Unsupported model type: {model_type}")
+
+    model = model_loader(model_dir)
     with open(transformer_path, "rb") as transformer_file:
         fitted_column_transformer = pickle.load(transformer_file)
     with open(row_wise_features_path, "rb") as row_wise_features_file:
@@ -272,6 +282,7 @@ def load_inference_bundle_from_local_artifacts(
         "selected_features": best_features,
         "categorical_mapping": categorical_mapping,
         "artifact_dir": artifact_dir,
+        "model_type": model_type,
     }
 
 

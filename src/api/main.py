@@ -10,14 +10,20 @@ from api.services.inference_frame_service import InferenceFrameService
 from api.services.model_service import ModelService
 from api.v1.router import api_router
 from utils.inference_utils import load_inference_bundle_from_local_artifacts
+from utils.statics import lightgbm_model_name
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     load_dotenv()
-    default_artifact_dir = str(Path(__file__).resolve().parent / "artifacts")
+    model_type = os.getenv("APP_MODEL_TYPE", lightgbm_model_name)
+    artifacts_root_dir = Path(__file__).resolve().parent / "artifacts"
+    default_artifact_dir = str(artifacts_root_dir / model_type)
     artifact_dir = os.getenv("APP_ARTIFACT_DIR", default_artifact_dir)
-    app.state.inference_bundle = load_inference_bundle_from_local_artifacts(artifact_dir)
+    app.state.inference_bundle = load_inference_bundle_from_local_artifacts(
+        artifact_dir=artifact_dir,
+        model_type=model_type,
+    )
     app.state.inference_frame_service = InferenceFrameService(app.state.inference_bundle)
     app.state.model_service = ModelService(app.state.inference_bundle)
     yield

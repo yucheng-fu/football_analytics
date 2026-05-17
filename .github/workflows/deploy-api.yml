@@ -49,6 +49,7 @@ jobs:
           # 3. Copy docker file and README (Dockerfile and config files)
           cp src/api/Dockerfile deploy_dir/
           cp src/api/README.md deploy_dir/
+          printf "APP_MODEL_TYPE=%s\n" "$MODEL_TYPE" > deploy_dir/.env
           
           # IMPORTANT: If you have a pyproject.toml, setup.py, or requirements.txt, 
           # you MUST copy them so pip knows how to install your app.
