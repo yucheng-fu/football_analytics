@@ -1,25 +1,30 @@
 import logging
 import json
-import os
-import pickle
-import tempfile
-from typing import Any, List, Optional
+import random
+from typing import List, Optional, Union
 
+from catboost import CatBoostClassifier
+from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
 import mlflow
 import numpy as np
 import pandas as pd
 import polars as pl
 from lightgbm import LGBMClassifier
-from mlflow.models import infer_signature
-from mlflow.tracking import MlflowClient
+from xgboost import XGBClassifier
+from catboost import CatBoostClassifier
 from sklearn.metrics import log_loss
 
 from feature_engineering.ColumnTransformer import ColumnTransformer
 from feature_engineering.OpenFE.FeatureGenerator import Node
 from feature_engineering.OpenFE.utils import tree_to_formula
 from feature_engineering.RowWiseTransformations import RowWiseTransformations
-from utils.statics import lightgbm_model_name, tracking_uri
+import utils.statics as statics
+from utils.mlflow_handler import MLflowHandler
 from utils.utils import safe_production_transform
+from model.LGBMWrapper import LGBMWrapper
+from model.XGBoostWrapper import XGBoostWrapper
+from model.CatBoostWrapper import CatBoostWrapper
 
 
 class ModelTrainer:
@@ -53,6 +58,43 @@ class ModelTrainer:
         self.categorical_columns = categorical_columns or []
         self.run_name = run_name
         self.experiment_name = experiment_name
+        self.mlflow_handler = MLflowHandler(
+            tracking_uri=statics.tracking_uri,
+            experiment_name=experiment_name,
+            logger=self.logger,
+        )
+        self.seed = 165
+        self._set_global_seed()
+        self.wrapper = self._fetch_model_wrapper(self.model_type)
+
+    def _set_global_seed(self):
+        """Set global random seeds used by NumPy and Python's random module."""
+        np.random.seed(self.seed)
+        random.seed(self.seed)
+
+    def _fetch_model_wrapper(
+        self, model_name: str
+    ) -> Union[LGBMWrapper, XGBoostWrapper, CatBoostWrapper]:
+        """Factory method to return a model wrapper instance based on the model name.
+
+        Args:
+            model_name (str): Name of the model type (e.g., "lightgbm", "xgboost", "catboost").
+
+        Returns:
+            BaseModelWrapper: An instance of a class that inherits from BaseModelWrapper.
+
+        Raises:
+            ValueError: If the provided model_name is not supported.
+        """
+        match model_name:
+            case statics.lightgbm_model_name:
+                return LGBMWrapper(seed=self.seed)
+            case statics.xgboost_model_name:
+                return XGBoostWrapper(seed=self.seed)
+            case statics.catboost_model_name:
+                return CatBoostWrapper(seed=self.seed)
+
+        raise ValueError(f"Unsupported model type: {model_name}")
 
     def setup_mlflow(self) -> None:
         """Set up MLflow tracking and experiment."""
@@ -67,11 +109,11 @@ class ModelTrainer:
         - Row-wise transformations: enabled
         """
         )
+        self.mlflow_handler.setup()
 
-        mlflow.set_tracking_uri(tracking_uri)
-        mlflow.set_experiment(experiment_name=self.experiment_name)
-
-    def _effective_params(self, model: LGBMClassifier) -> dict:
+    def _effective_params(
+        self, model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier]
+    ) -> dict:
         """Build model params from logged params and metadata fields."""
         params = self.params.copy()
         if "n_estimators_used" in params and "n_estimators" in model.get_params():
@@ -79,36 +121,6 @@ class ModelTrainer:
 
         accepted = set(model.get_params().keys())
         return {k: v for k, v in params.items() if k in accepted}
-
-    def set_params(self, model: LGBMClassifier) -> LGBMClassifier:
-        """Apply effective params to model."""
-        model.set_params(**self._effective_params(model))
-        return model
-
-    def fetch_model(self) -> LGBMClassifier:
-        """Return a fresh estimator instance for the configured model type."""
-        if self.model_type == lightgbm_model_name:
-            return LGBMClassifier(verbose=-1)
-
-        raise ValueError(f"Unsupported model type: {self.model_type}")
-
-    def log_model(
-        self,
-        final_model: LGBMClassifier,
-        X_data: pd.DataFrame,
-        output: np.ndarray,
-    ) -> None:
-        """Log trained model to MLflow."""
-        signature = infer_signature(X_data, output)
-
-        log_fn_mapping = {
-            lightgbm_model_name: mlflow.lightgbm.log_model,
-        }
-        log_fn = log_fn_mapping.get(self.model_type)
-        if log_fn is None:
-            raise ValueError(f"Unsupported model type: {self.model_type}")
-
-        log_fn(final_model, name=self.model_type, signature=signature)
 
     def _apply_openfe_rowwise_nodes(self, X_pd: pd.DataFrame) -> pd.DataFrame:
         """Apply OpenFE row-wise nodes to a single dataset."""
@@ -157,24 +169,41 @@ class ModelTrainer:
         return X_out
 
     def _categorical_feature_names(self, X_pd: pd.DataFrame) -> list[str]:
-        """Return configured categorical column names that exist in ``X_pd``."""
+        """Return categorical column names that are present in a dataframe.
+
+        Args:
+            X_pd (pd.DataFrame): Input dataframe.
+
+        Returns:
+            list[str]: Valid categorical column names that exist in ``X_pd``.
+        """
         names: list[str] = []
         for col in self.categorical_columns:
-            if isinstance(col, str) and col in X_pd.columns:
-                names.append(col)
+            # If column in self.categorical_columns is string and in dataframe column, append to names
+            if isinstance(col, str):
+                if col in X_pd.columns:
+                    names.append(col)
         return names
 
     def _apply_categorical_dtypes(self, X_pd: pd.DataFrame) -> pd.DataFrame:
-        """Return a copy of ``X_pd`` with categorical dtypes enforced."""
+        """Return a copy of ``X_pd`` with categorical dtypes enforced.
+
+        Args:
+            X_pd (pd.DataFrame): Input dataframe.
+
+        Returns:
+            pd.DataFrame: Copied dataframe with object/string columns cast to
+                ``category`` and configured categorical columns enforced.
+        """
         X_pd_copy = X_pd.copy()
 
+        # Ensure all text-like columns are categorical for LightGBM/RFE compatibility.
         object_like_cols = X_pd_copy.select_dtypes(include=["object", "string"]).columns
         for name in object_like_cols:
             X_pd_copy[name] = X_pd_copy[name].astype("category")
 
         for name in self._categorical_feature_names(X_pd_copy):
             X_pd_copy[name] = X_pd_copy[name].astype("category")
-
         return X_pd_copy
 
     def _build_categorical_mapping(self, X_pd: pd.DataFrame) -> dict[str, list]:
@@ -185,41 +214,9 @@ class ModelTrainer:
                 mapping[col] = X_pd[col].cat.categories.tolist()
         return mapping
 
-    def _register_and_tag_model(self, run_id: str) -> None:
-        """Register model and set model-version metadata in MLflow registry."""
-        model_name = f"{self.experiment_name}_{self.model_type}"
-        registered_model = mlflow.register_model(
-            model_uri=f"runs:/{run_id}/{self.model_type}",
-            name=model_name,
-        )
-        client = MlflowClient()
-        client.set_model_version_tag(
-            name=model_name,
-            version=registered_model.version,
-            key="alias",
-            value="production",
-        )
-        client.set_registered_model_alias(
-            name=model_name,
-            alias="production",
-            version=registered_model.version,
-        )
-
-    def _log_artifact(self, name: str, object: Any) -> None:
-        """Serialize an object to a temporary pickle file and log it to MLflow."""
-        with tempfile.TemporaryDirectory() as tmp_dir:
-            tmp_file_path = os.path.join(tmp_dir, f"{name}.pkl")
-            with open(tmp_file_path, "wb") as f:
-                pickle.dump(object, f)
-
-            mlflow.log_artifact(
-                local_path=tmp_file_path,
-                artifact_path=f"pickles/{name}",
-            )
-
     def _log_training_run(
         self,
-        model: LGBMClassifier,
+        model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier],
         X_train_final: pd.DataFrame,
         y_pred_proba: np.ndarray,
         y_train_np: np.ndarray,
@@ -229,16 +226,36 @@ class ModelTrainer:
     ) -> None:
         """Log artifacts/metrics and register trained model."""
         train_log_loss = log_loss(y_train_np, y_pred_proba)
-        self.log_model(final_model=model, X_data=X_train_final, output=y_pred_proba)
+        model_artifact_path = self.model_type
+        self.mlflow_handler.log_model(
+            model=model,
+            X_data=X_train_final,
+            y_pred=y_pred_proba,
+            model_type=self.model_type,
+            name=model_artifact_path,
+        )
         mlflow.log_params(self.params)
         mlflow.set_tag("features", ",".join(map(str, self.features)))
         mlflow.set_tag("categorical_mapping", json.dumps(categorical_mapping))
+        mlflow.set_tag("model_type", self.model_type)
         if column_transformer is not None:
-            self._log_artifact("fitted_column_transformer", column_transformer)
+            self.mlflow_handler.log_artifact_pickle(
+                column_transformer, "fitted_column_transformer"
+            )
         mlflow.log_metric("train_loss", train_log_loss)
-        self._register_and_tag_model(run_id=run_id)
 
-    def train(self, X_train: pl.DataFrame, y_train: pl.DataFrame) -> LGBMClassifier:
+        # Register and tag model
+        model_name = f"{self.experiment_name}_{self.model_type}"
+        self.mlflow_handler.register_and_tag_model(
+            run_id=run_id,
+            model_name=model_name,
+            model_type=model_artifact_path,
+            alias="production",
+        )
+
+    def train(
+        self, X_train: pl.DataFrame, y_train: pl.DataFrame
+    ) -> Union[LGBMClassifier, XGBClassifier, CatBoostClassifier]:
         """Train final model using params + row/column-wise OFE features + selected features."""
         self.setup_mlflow()
 
@@ -256,11 +273,15 @@ class ModelTrainer:
         categorical_mapping = self._build_categorical_mapping(X_train_final)
 
         with mlflow.start_run(run_name=f"{self.run_name}_{self.model_type}") as run:
-            model = self.fetch_model()
-            model = self.set_params(model=model)
+            base_estimator = self.wrapper.fetch_base_estimator()
+            effective_fit_params = self._effective_params(model=base_estimator)
 
-            model.fit(
-                X_train_final, y_train_np, feature_name=list(X_train_final.columns)
+            model = self.wrapper.fit(
+                X_train=X_train_final,
+                y_train=y_train_np,
+                use_early_stopping=False,
+                params=effective_fit_params,
+                trial=None,  # No Optuna trial for final training
             )
             setattr(model, "categorical_mapping_", categorical_mapping)
 
@@ -275,4 +296,5 @@ class ModelTrainer:
                 column_transformer=fitted_column_transformer,
             )
 
+            mlflow.end_run()
             return model

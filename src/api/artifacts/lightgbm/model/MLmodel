@@ -13,7 +13,7 @@ flavors:
     python_version: 3.11.10
 mlflow_version: 3.2.0
 model_id: null
-model_size_bytes: 4036230
-model_uuid: b09e236b74314bacbf1bc5a2fff4e225
+model_size_bytes: 321899
+model_uuid: 2d025b1d94384a1a96ef30cb26a83698
 prompts: null
-utc_time_created: '2026-05-11 20:29:41.937747'
+utc_time_created: '2026-05-17 21:02:05.616754'

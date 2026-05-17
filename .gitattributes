@@ -1,3 +1,5 @@
 *.ipynb linguist-vendored
 *.parquet filter=lfs diff=lfs merge=lfs -text
 *.png filter=lfs diff=lfs merge=lfs -text
+*.cb filter=lfs diff=lfs merge=lfs -text
+*.xgb filter=lfs diff=lfs merge=lfs -text

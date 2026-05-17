@@ -1,0 +1,16 @@
+{
+  "height": [
+    "Ground Pass",
+    "High Pass",
+    "Low Pass"
+  ],
+  "body_part": [
+    "Drop Kick",
+    "Head",
+    "Keeper Arm",
+    "Left Foot",
+    "Other",
+    "Right Foot",
+    "Unknown"
+  ]
+}

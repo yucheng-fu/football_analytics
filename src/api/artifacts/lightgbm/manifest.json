@@ -1,8 +1,8 @@
 {
-  "created_at_utc": "2026-05-11T20:29:56.947275+00:00",
+  "created_at_utc": "2026-05-17T21:02:11.776593+00:00",
   "model_uri": "models:/Final models_lightgbm@production",
-  "final_model_run_id": "9b254d0d7ac24c849dd9cc18c2cf7292",
-  "tuning_run_id": "5340090b981e487290188278da2a9d61",
+  "final_model_run_id": "67a5bbb1b1db47b3ad0a7a5850ddc038",
+  "tuning_run_id": "0779b31ede79448980cc17302024db76",
   "final_models_experiment_id": "441823692328196814",
   "model_selection_experiment_id": "428168727943543105"
 }

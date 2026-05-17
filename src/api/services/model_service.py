@@ -22,7 +22,9 @@ class ModelService:
         self.fitted_column_transformer = bundle.get("fitted_column_transformer")
         self.row_wise_features = bundle.get("row_wise_features")
         self.column_wise_features = bundle.get("column_wise_features")
-        self.best_features = bundle.get("best_features", bundle.get("selected_features"))
+        self.best_features = bundle.get(
+            "best_features", bundle.get("selected_features")
+        )
         self.categorical_mapping = bundle.get("categorical_mapping")
         self.inference_frame_service = InferenceFrameService(bundle)
 
@@ -65,4 +67,5 @@ class ModelService:
             prediction=prediction,
             probability=probability,
             timestamp=datetime.now(timezone.utc).isoformat(),
+            model=type(self.model).__name__,
         )

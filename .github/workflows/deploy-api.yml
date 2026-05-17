@@ -5,14 +5,18 @@ on:
     branches: [main]
     paths:
       - "src/api/**"
-      - "src/utils/**"
       - "src/model/**"
       - "src/feature_engineering/**"
-      - "Dockerfile"
-      - "README.md"
+      - "src/utils/inference_utils.py"
+      - "src/utils/statics.py"
       - "pyproject.toml"
       - ".github/workflows/deploy-api.yml"
   workflow_dispatch:
+    inputs:
+      model_type:
+        description: "Model type for API artifacts (lightgbm, xgboost, catboost)"
+        required: false
+        default: "lightgbm"
 
 jobs:
   deploy:
@@ -28,19 +32,34 @@ jobs:
         env:
           HF_TOKEN: ${{ secrets.HF_TOKEN }}
           HF_REPO: ${{ secrets.HF_SPACE_REPO_ID }}
+          MODEL_TYPE: ${{ github.event.inputs.model_type || 'lightgbm' }}
         run: |
+          # 0. Fail fast if the selected model artifact folder is missing or empty.
+          if [ ! -d "src/api/artifacts/$MODEL_TYPE" ]; then
+            echo "Missing artifact directory: src/api/artifacts/$MODEL_TYPE"
+            exit 1
+          fi
+          if [ -z "$(ls -A "src/api/artifacts/$MODEL_TYPE")" ]; then
+            echo "Artifact directory is empty: src/api/artifacts/$MODEL_TYPE"
+            exit 1
+          fi
+
           # 1. Create a temporary deployment directory with the src structure
           mkdir -p deploy_dir/src
+          mkdir -p deploy_dir/src/utils
           
           # 2. Copy the folders into the NEW src directory
           cp -r src/api deploy_dir/src/
-          cp -r src/utils deploy_dir/src/
           cp -r src/model deploy_dir/src/
           cp -r src/feature_engineering deploy_dir/src/
-          
-          # 3. Copy root files (Dockerfile and config files)
-          cp Dockerfile deploy_dir/
-          cp README.md deploy_dir/
+          cp -r src/utils/inference_utils.py deploy_dir/src/utils/
+          cp -r src/utils/statics.py deploy_dir/src/utils/
+          # Ensure selected model artifact folder exists in the deployment payload.
+          mkdir -p deploy_dir/src/api/artifacts/$MODEL_TYPE
+          # 3. Copy docker file and README (Dockerfile and config files)
+          cp src/api/Dockerfile deploy_dir/
+          cp src/api/README.md deploy_dir/
+          printf "APP_MODEL_TYPE=%s\n" "$MODEL_TYPE" > deploy_dir/.env
           
           # IMPORTANT: If you have a pyproject.toml, setup.py, or requirements.txt, 
           # you MUST copy them so pip knows how to install your app.
@@ -56,6 +75,8 @@ jobs:
           git lfs install
           git lfs track "*.pkl"
           git lfs track "*.parquet"
+          git lfs track "*.cb"
+          git lfs track "*.xgb"
           
           git add .
           git commit -m "Deploying with correct src structure"
