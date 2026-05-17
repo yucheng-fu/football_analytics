@@ -64,6 +64,8 @@ jobs:
           git lfs install
           git lfs track "*.pkl"
           git lfs track "*.parquet"
+          git lfs track "*.cb"
+          git lfs track "*.xgb"
           
           git add .
           git commit -m "Deploying with correct src structure"
