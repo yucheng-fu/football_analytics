@@ -36,7 +36,7 @@ class LGBMWrapper(BaseModelWrapper):
         }
         return params
 
-    def fetch_base_estimator(self, params: Dict[str, Any] = None) -> LGBMClassifier:
+    def fetch_base_estimator(self, params: Dict[str, Any] = {}) -> LGBMClassifier:
         return LGBMClassifier(
             metric="binary_logloss",
             verbose=-1,
@@ -52,7 +52,7 @@ class LGBMWrapper(BaseModelWrapper):
         X_val: pd.DataFrame = None,
         y_val: np.ndarray = None,
         use_early_stopping: bool = False,
-        params: Dict[str, Any] = None,
+        params: Dict[str, Any] = {},
         trial: optuna.Trial = None,
     ):
         model = self.fetch_base_estimator(params=params)

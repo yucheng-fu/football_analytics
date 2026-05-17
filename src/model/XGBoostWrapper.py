@@ -35,7 +35,7 @@ class XGBoostWrapper(BaseModelWrapper):
         }
         return params
 
-    def fetch_base_estimator(self, params: Dict[str, Any] = None) -> XGBClassifier:
+    def fetch_base_estimator(self, params: Dict[str, Any] = {}) -> XGBClassifier:
         return XGBClassifier(
             tree_method="hist",
             eval_metric="logloss",
@@ -47,13 +47,13 @@ class XGBoostWrapper(BaseModelWrapper):
 
     def fit(
         self,
-        X_train,
-        y_train,
-        X_val=None,
-        y_val=None,
-        use_early_stopping=False,
-        params=None,
-        trial=None,
+        X_train: pd.DataFrame,
+        y_train: np.ndarray,
+        X_val: pd.DataFrame = None,
+        y_val: np.ndarray = None,
+        use_early_stopping: bool = False,
+        params: Dict[str, Any] = {},
+        trial: optuna.Trial = None,
     ):
         model = self.fetch_base_estimator(params=params)
         if use_early_stopping and X_val is not None and y_val is not None:

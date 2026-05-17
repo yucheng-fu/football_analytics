@@ -1,5 +1,5 @@
 import logging
-from typing import Optional
+from typing import Optional, Union
 
 import matplotlib.pyplot as plt
 import mlflow
@@ -7,6 +7,8 @@ import numpy as np
 import pandas as pd
 import polars as pl
 from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
+from catboost import CatBoostClassifier
 from sklearn.metrics import accuracy_score
 from sklearn.metrics import f1_score
 from sklearn.metrics import log_loss
@@ -30,7 +32,7 @@ class ModelEval:
 
     def __init__(
         self,
-        model: LGBMClassifier,
+        model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier],
         X_train: pl.DataFrame,
         y_train: pl.DataFrame,
         best_features: np.ndarray,

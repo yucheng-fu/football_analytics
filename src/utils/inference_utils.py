@@ -12,7 +12,12 @@ from mlflow.tracking import MlflowClient
 from feature_engineering.OpenFE.openfe import tree_to_formula
 from feature_engineering.RowWiseTransformations import RowWiseTransformations
 from model.data_classes import LGBMParams, XGBoostParams, CatBoostParams, OuterCVResults
-from utils.statics import lightgbm_model_name, tracking_uri
+from utils.statics import (
+    lightgbm_model_name,
+    xgboost_model_name,
+    catboost_model_name,
+    tracking_uri,
+)
 
 
 def get_parent_run_id_from_experiment(
@@ -144,15 +149,23 @@ def get_ofe_feature_nodes_from_run_id(
     return row_wise_features, column_wise_features
 
 
-def fetch_model(model_name: str, alias: str = "production"):
+def fetch_model(model_type: str, alias: str = "production"):
     """Fetch a trained model from MLflow Model Registry via alias."""
     mlflow.set_tracking_uri(tracking_uri)
     mlflow_client = MlflowClient()
+    model_name = f"Final models_{model_type}"
     model_version_info = mlflow_client.get_model_version_by_alias(model_name, alias)
     model_version = model_version_info.version
     model_uri = f"models:/{model_name}@{alias}"
     print(f"Loading model '{model_name}' alias '{alias}' (version {model_version})...")
-    model = mlflow.lightgbm.load_model(model_uri)
+
+    model_mapping = {
+        lightgbm_model_name: mlflow.lightgbm.load_model,
+        catboost_model_name: mlflow.catboost.load_model,
+        xgboost_model_name: mlflow.xgboost.load_model,
+    }
+
+    model = model_mapping.get(model_type)(model_uri)
     print(f"Loaded model from '{model_uri}'.")
     return model
 
@@ -177,7 +190,7 @@ def fetch_categorical_mapping_by_run_id(run_id: str) -> dict[str, list]:
 
 
 def fetch_fitted_column_transformer_by_run_id(
-    run_id: str, artifact_name: str = "fitted_column_transformer"
+    run_id: str, artifact_name: str = "fitted_column_transformer.pkl"
 ):
     """Fetch fitted ColumnTransformer pickle artifact from an MLflow run."""
     mlflow.set_tracking_uri(tracking_uri)

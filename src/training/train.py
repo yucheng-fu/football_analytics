@@ -1,5 +1,6 @@
 import logging
 import json
+import random
 from typing import List, Optional, Union
 
 from catboost import CatBoostClassifier
@@ -10,6 +11,8 @@ import numpy as np
 import pandas as pd
 import polars as pl
 from lightgbm import LGBMClassifier
+from xgboost import XGBClassifier
+from catboost import CatBoostClassifier
 from sklearn.metrics import log_loss
 
 from feature_engineering.ColumnTransformer import ColumnTransformer
@@ -60,7 +63,14 @@ class ModelTrainer:
             experiment_name=experiment_name,
             logger=self.logger,
         )
+        self.seed = 165
+        self._set_global_seed()
         self.wrapper = self._fetch_model_wrapper(self.model_type)
+
+    def _set_global_seed(self):
+        """Set global random seeds used by NumPy and Python's random module."""
+        np.random.seed(self.seed)
+        random.seed(self.seed)
 
     def _fetch_model_wrapper(
         self, model_name: str
@@ -206,7 +216,7 @@ class ModelTrainer:
 
     def _log_training_run(
         self,
-        model: LGBMClassifier,
+        model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier],
         X_train_final: pd.DataFrame,
         y_pred_proba: np.ndarray,
         y_train_np: np.ndarray,
@@ -216,15 +226,18 @@ class ModelTrainer:
     ) -> None:
         """Log artifacts/metrics and register trained model."""
         train_log_loss = log_loss(y_train_np, y_pred_proba)
+        model_artifact_path = self.model_type
         self.mlflow_handler.log_model(
             model=model,
             X_data=X_train_final,
             y_pred=y_pred_proba,
             model_type=self.model_type,
+            name=model_artifact_path,
         )
         mlflow.log_params(self.params)
         mlflow.set_tag("features", ",".join(map(str, self.features)))
         mlflow.set_tag("categorical_mapping", json.dumps(categorical_mapping))
+        mlflow.set_tag("model_type", self.model_type)
         if column_transformer is not None:
             self.mlflow_handler.log_artifact_pickle(
                 column_transformer, "fitted_column_transformer"
@@ -236,11 +249,13 @@ class ModelTrainer:
         self.mlflow_handler.register_and_tag_model(
             run_id=run_id,
             model_name=model_name,
-            model_type=self.model_type,
+            model_type=model_artifact_path,
             alias="production",
         )
 
-    def train(self, X_train: pl.DataFrame, y_train: pl.DataFrame) -> LGBMClassifier:
+    def train(
+        self, X_train: pl.DataFrame, y_train: pl.DataFrame
+    ) -> Union[LGBMClassifier, XGBClassifier, CatBoostClassifier]:
         """Train final model using params + row/column-wise OFE features + selected features."""
         self.setup_mlflow()
 
@@ -281,4 +296,5 @@ class ModelTrainer:
                 column_transformer=fitted_column_transformer,
             )
 
+            mlflow.end_run()
             return model
