@@ -63,6 +63,25 @@ class MLflowHandler:
                 artifact_path=artifact_path,
             )
 
+    def log_oof_predictions(
+        self,
+        oof_preds: np.ndarray,
+        name: str = "oof_predictions",
+        artifact_path: str = "predictions",
+    ) -> None:
+        """Save out-of-fold predictions as a NumPy `.npy` file and log to MLflow.
+
+        Args:
+            oof_preds (np.ndarray): Array of out-of-fold prediction probabilities or scores.
+            name (str): Base filename (without extension). Defaults to "oof_predictions".
+            artifact_path (str): Artifact path within MLflow. Defaults to "predictions".
+        """
+        with tempfile.TemporaryDirectory() as tmp_dir:
+            tmp_file_path = os.path.join(tmp_dir, f"{name}.npy")
+            # Use allow_pickle=False for numeric arrays; enable if object dtype is used
+            np.save(tmp_file_path, oof_preds)
+            mlflow.log_artifact(local_path=tmp_file_path, artifact_path=artifact_path)
+
     def log_model(
         self,
         model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier],

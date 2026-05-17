@@ -12,20 +12,6 @@ class OuterCVResults:
     parent_run_id: Optional[str] = None
     run_ids: List[str] = field(default_factory=list)
     experiment_ids: List[str] = field(default_factory=list)
-    # New argument to drive pre-allocation
-    n_samples: int = field(default=0, kw_only=True)
-    n_classes: int = field(default=2, kw_only=True)
-    out_of_fold_predictions: Optional[np.ndarray] = field(default=None, init=False)
-
-
-def __post_init__(self):
-    if self.n_samples > 0:
-        if self.n_classes > 2:
-            # Multiclass: Keep all class probabilities (N x C)
-            self.out_of_fold_predictions = np.zeros((self.n_samples, self.n_classes))
-        else:
-            # Binary: Optimize memory by storing only class 1 as a 1D array (N,)
-            self.out_of_fold_predictions = np.zeros(self.n_samples)
 
 
 class LGBMParams(BaseModel):

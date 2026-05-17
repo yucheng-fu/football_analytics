@@ -295,27 +295,24 @@ class ModelCVEvaluator:
             logged_params["n_estimators_used"] = int(best_iteration)
         return logged_params
 
-    def _log_oof_predictions(
-        self,
-        outer_cv_results: OuterCVResults,
-        val_idx: np.ndarray,
-        predictions: np.ndarray,
-    ) -> None:
-        """Store out-of-fold predictions for an outer fold in the results object.
+    def _init_oof_predictions(self, n_samples: int, n_classes: int = 2) -> np.ndarray:
+        """Initialize an array to store out-of-fold predictions for all samples.
 
         Args:
-            outer_cv_results (OuterCVResults): The results object to store predictions in.
-            val_idx (np.ndarray): The indices of the validation samples for the current outer fold.
-            predictions (np.ndarray): The predicted probabilities for the validation set of the current fold.
+            n_samples (int): Total number of samples in the dataset.
+            n_classes (int, optional): Number of classes for classification. Defaults to 2.
+
+        Returns:
+            np.ndarray: An array initialized to store out-of-fold predictions.
         """
-        if outer_cv_results.out_of_fold_predictions.ndim == 1:
-            outer_cv_results.out_of_fold_predictions[val_idx] = predictions[
-                :, 1
-            ]  # Store positive for binary classification
+        if n_classes == 2:
+            return np.zeros(
+                n_samples
+            )  # Store only positive class probability for binary classification
         else:
-            outer_cv_results.out_of_fold_predictions[val_idx, :] = (
-                predictions  # Store all class probabilities for multiclass classification
-            )
+            return np.zeros(
+                (n_samples, n_classes)
+            )  # Store probabilities for all classes for multiclass classification
 
     def _append_and_log_metrics_and_params(
         self,
@@ -857,7 +854,12 @@ class ModelCVEvaluator:
         self._setup_mlflow()
         X_train_pd = X_train.to_pandas()
         y_train_np = y_train.to_numpy().ravel()
-        outer_cv_results = OuterCVResults(n_samples=len(y_train_np))
+        n_classes = len(np.unique(y_train_np))
+        oof_predictions = self._init_oof_predictions(
+            n_samples=len(X_train_pd), n_classes=n_classes
+        )
+
+        outer_cv_results = OuterCVResults()
 
         # Cast to categorical dtype
         X_train_pd = self._apply_categorical_dtypes(X_train_pd)
@@ -946,12 +948,6 @@ class ModelCVEvaluator:
                     )
 
                     # 4. Log metrics and parameters to MLFlow
-                    self._log_oof_predictions(
-                        outer_cv_results=outer_cv_results,
-                        val_idx=val_idx,
-                        predictions=y_pred_proba,
-                    )
-
                     self._append_and_log_metrics_and_params(
                         outer_cv_results=outer_cv_results,
                         selected_features=selected_features,
@@ -960,10 +956,17 @@ class ModelCVEvaluator:
                         run=run,
                     )
 
+                    # 5. Store OOF predictions for the fold
+                    if n_classes == 2:
+                        oof_predictions[val_idx] = y_pred_proba[:, 1]
+                    else:
+                        oof_predictions[val_idx, :] = y_pred_proba
+
             mean_score = np.mean(outer_cv_results.scores)
             std_score = np.std(outer_cv_results.scores)
             mlflow.log_metric("mean_log_loss", mean_score)
             mlflow.log_metric("std_log_loss", std_score)
+            self.mlflow_handler.log_oof_predictions(oof_preds=oof_predictions)
 
         mlflow.end_run()
 
