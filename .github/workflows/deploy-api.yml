@@ -34,6 +34,16 @@ jobs:
           HF_REPO: ${{ secrets.HF_SPACE_REPO_ID }}
           MODEL_TYPE: ${{ github.event.inputs.model_type || 'lightgbm' }}
         run: |
+          # 0. Fail fast if the selected model artifact folder is missing or empty.
+          if [ ! -d "src/api/artifacts/$MODEL_TYPE" ]; then
+            echo "Missing artifact directory: src/api/artifacts/$MODEL_TYPE"
+            exit 1
+          fi
+          if [ -z "$(ls -A "src/api/artifacts/$MODEL_TYPE")" ]; then
+            echo "Artifact directory is empty: src/api/artifacts/$MODEL_TYPE"
+            exit 1
+          fi
+
           # 1. Create a temporary deployment directory with the src structure
           mkdir -p deploy_dir/src
           mkdir -p deploy_dir/src/utils
