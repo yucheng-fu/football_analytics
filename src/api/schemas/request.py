@@ -1,6 +1,8 @@
 from typing import Literal
+
 from pydantic import BaseModel, Field
-from api.schemas.enums import PassHeight, Bodypart
+
+from api.schemas.enums import Bodypart, PassHeight
 
 
 class InferenceRequest(BaseModel):

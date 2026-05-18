@@ -1,8 +1,10 @@
-from sklearn.base import BaseEstimator, TransformerMixin
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import OneHotEncoder
 from typing import List, Optional
+
+import numpy as np
+import pandas as pd
+from sklearn.base import BaseEstimator, TransformerMixin
+from sklearn.preprocessing import OneHotEncoder
+
 from feature_engineering.OpenFE.FeatureGenerator import Node
 from feature_engineering.OpenFE.openfe import tree_to_formula
 
@@ -16,9 +18,7 @@ class ColumnTransformer(BaseEstimator, TransformerMixin):
     ):
         self.ohe_columns = [] if ohe_columns is None else ohe_columns
         self.cat_columns = [] if cat_columns is None else cat_columns
-        self.feature_name_mapping = (
-            {} if feature_name_mapping is None else feature_name_mapping
-        )
+        self.feature_name_mapping = {} if feature_name_mapping is None else feature_name_mapping
         # handle_unknown='ignore' is crucial for consistent nested CV
         self.encoder = OneHotEncoder(handle_unknown="ignore", sparse_output=False)
         self.feature_nodes = []
@@ -32,7 +32,6 @@ class ColumnTransformer(BaseEstimator, TransformerMixin):
         self.feature_nodes = feature_nodes or []
         self.mappings_ = {}
         for node in self.feature_nodes:
-
             formula = tree_to_formula(node)
             if node.name == "freq":
                 col_data = node.children[0].calculate(X)
@@ -65,9 +64,7 @@ class ColumnTransformer(BaseEstimator, TransformerMixin):
             self.encoder.fit(X[self.ohe_columns])
         return self
 
-    def transform(
-        self, X: pd.DataFrame, feature_nodes: List[Node] | None = None
-    ) -> pd.DataFrame:
+    def transform(self, X: pd.DataFrame, feature_nodes: List[Node] | None = None) -> pd.DataFrame:
         df = X.copy()
 
         nodes = feature_nodes if feature_nodes is not None else self.feature_nodes
@@ -88,9 +85,7 @@ class ColumnTransformer(BaseEstimator, TransformerMixin):
                 d2 = node.children[1].calculate(X).astype(str)
                 temp = d1 + "_" + d2
                 temp[d1.isna() | d2.isna()] = np.nan
-                df[output_name] = (
-                    temp.map(self.mappings_[formula]).fillna(-1).astype(float)
-                )
+                df[output_name] = temp.map(self.mappings_[formula]).fillna(-1).astype(float)
 
             elif node.name == "CombineThenFreq":
                 d1 = node.children[0].calculate(X).astype(str)

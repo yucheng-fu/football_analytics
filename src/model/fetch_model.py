@@ -2,10 +2,12 @@ import os
 import sys
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+import argparse
+
 import mlflow
 import mlflow.lightgbm
 from mlflow.tracking import MlflowClient
-import argparse
+
 from utils.statics import tracking_uri
 
 
@@ -30,9 +32,7 @@ def fetch_model(model_name: str, alias: str = "production"):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Fetch a trained model from MLflow.")
-    parser.add_argument(
-        "--model_name", type=str, help="The name of the model to fetch."
-    )
+    parser.add_argument("--model_name", type=str, help="The name of the model to fetch.")
     parser.add_argument(
         "--alias",
         type=str,

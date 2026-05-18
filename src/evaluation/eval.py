@@ -6,16 +6,10 @@ import mlflow
 import numpy as np
 import pandas as pd
 import polars as pl
-from lightgbm import LGBMClassifier
-from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
-from sklearn.metrics import accuracy_score
-from sklearn.metrics import f1_score
-from sklearn.metrics import log_loss
-from sklearn.metrics import precision_score
-from sklearn.metrics import recall_score
-from sklearn.metrics import roc_auc_score
-from sklearn.metrics import roc_curve
+from lightgbm import LGBMClassifier
+from sklearn.metrics import accuracy_score, f1_score, log_loss, precision_score, recall_score, roc_auc_score, roc_curve
+from xgboost import XGBClassifier
 
 from feature_engineering.ColumnTransformer import ColumnTransformer
 from feature_engineering.OpenFE.utils import tree_to_formula
@@ -26,9 +20,7 @@ from utils.utils import safe_production_transform
 
 class ModelEval:
     logger = logging.getLogger(__name__)
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
     def __init__(
         self,
@@ -52,15 +44,11 @@ class ModelEval:
         self.row_wise_features = row_wise_features or []
         self.column_wise_features = column_wise_features or []
         self.row_wise_transformations = (
-            row_wise_transformations
-            if row_wise_transformations is not None
-            else RowWiseTransformations()
+            row_wise_transformations if row_wise_transformations is not None else RowWiseTransformations()
         )
         self.categorical_columns = categorical_columns or []
         self.fitted_column_transformer = fitted_column_transformer
-        self.categorical_mapping = self._resolve_categorical_mapping(
-            categorical_mapping
-        )
+        self.categorical_mapping = self._resolve_categorical_mapping(categorical_mapping)
 
     @property
     def model_type(self) -> str:
@@ -68,9 +56,7 @@ class ModelEval:
 
     def setup_mlflow(self) -> None:
         """Set up MLflow tracking and experiment."""
-        self.logger.info(
-            f"Starting evaluation for {self.model_type} with the following configuration:"
-        )
+        self.logger.info(f"Starting evaluation for {self.model_type} with the following configuration:")
 
         mlflow.set_tracking_uri(tracking_uri)
         mlflow.set_experiment(experiment_name=self.experiment_name)
@@ -126,9 +112,7 @@ class ModelEval:
         X_pd = self._add_legacy_openfe_aliases(X_pd)
         return self._apply_categorical_dtypes(X_pd)
 
-    def _resolve_categorical_mapping(
-        self, categorical_mapping: Optional[dict[str, list]]
-    ) -> dict[str, list]:
+    def _resolve_categorical_mapping(self, categorical_mapping: Optional[dict[str, list]]) -> dict[str, list]:
         """Resolve categorical mapping from explicit input, then model attribute."""
         if isinstance(categorical_mapping, dict):
             return categorical_mapping
@@ -194,9 +178,7 @@ class ModelEval:
 
         missing_features = [f for f in self.best_features if f not in X_test_pd.columns]
         if missing_features:
-            raise ValueError(
-                f"Missing selected features after transformations: {missing_features}"
-            )
+            raise ValueError(f"Missing selected features after transformations: {missing_features}")
 
         X_test_final = X_test_pd[self.best_features]
         X_train_final = X_train_pd[self.best_features]
@@ -230,9 +212,7 @@ class ModelEval:
             )
 
             fig, ax = plt.subplots(figsize=(6, 6))
-            self.plot_auc_roc(
-                ax, roc_auc, fpr, tpr, train_roc_auc, train_fpr, train_tpr
-            )
+            self.plot_auc_roc(ax, roc_auc, fpr, tpr, train_roc_auc, train_fpr, train_tpr)
             mlflow.log_figure(fig, "roc_curve.png")
             plt.close(fig)
 

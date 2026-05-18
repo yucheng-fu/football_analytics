@@ -1,6 +1,7 @@
 import logging
 
 from fastapi import APIRouter, Depends, HTTPException, Request
+
 from api.core.dependencies import get_model_service
 from api.schemas.request import InferenceRequest
 from api.schemas.response import InferenceResponse

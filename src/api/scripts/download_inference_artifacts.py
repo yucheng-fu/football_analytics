@@ -7,20 +7,20 @@ from datetime import datetime, timezone
 import mlflow
 import numpy as np
 
+from utils.inference_utils import (
+    fetch_categorical_mapping_by_run_id,
+    fetch_fitted_column_transformer_by_run_id,
+    fetch_model,
+    get_best_params_and_features_from_parent_run_id,
+    get_ofe_feature_nodes_from_run_id,
+    get_parent_run_id_from_experiment,
+)
 from utils.statics import (
     FINAL_MODELS_EXPERIMENT_ID,
     MODEL_SELECTION_EXPERIMENT_ID,
     catboost_model_name,
     lightgbm_model_name,
     xgboost_model_name,
-)
-from utils.inference_utils import (
-    fetch_categorical_mapping_by_run_id,
-    fetch_fitted_column_transformer_by_run_id,
-    fetch_model,
-    get_ofe_feature_nodes_from_run_id,
-    get_parent_run_id_from_experiment,
-    get_best_params_and_features_from_parent_run_id,
 )
 
 
@@ -59,42 +59,28 @@ def download_inference_artifacts(
         raise ValueError(f"Unsupported model type: {model_type}")
     save_fn(model, os.path.join(output_dir, "model"))
 
-    row_wise_features, column_wise_features = get_ofe_feature_nodes_from_run_id(
-        run_id=tuning_run_id
-    )
+    row_wise_features, column_wise_features = get_ofe_feature_nodes_from_run_id(run_id=tuning_run_id)
     with open(os.path.join(output_dir, "row_wise_features.pkl"), "wb") as f:
         pickle.dump(row_wise_features, f)
     with open(os.path.join(output_dir, "column_wise_features.pkl"), "wb") as f:
         pickle.dump(column_wise_features, f)
 
-    fitted_column_transformer = fetch_fitted_column_transformer_by_run_id(
-        run_id=final_model_run_id
-    )
-    with open(
-        os.path.join(output_dir, "fitted_column_transformer.pkl"), "wb"
-    ) as transformer_file:
+    fitted_column_transformer = fetch_fitted_column_transformer_by_run_id(run_id=final_model_run_id)
+    with open(os.path.join(output_dir, "fitted_column_transformer.pkl"), "wb") as transformer_file:
         pickle.dump(fitted_column_transformer, transformer_file)
 
-    best_params, selected_features = get_best_params_and_features_from_parent_run_id(
-        parent_run_id=tuning_run_id
-    )
+    best_params, selected_features = get_best_params_and_features_from_parent_run_id(parent_run_id=tuning_run_id)
     with open(os.path.join(output_dir, "params.json"), "w", encoding="utf-8") as f:
         json.dump(best_params, f, ensure_ascii=True, indent=2)
     with open(os.path.join(output_dir, "best_params.json"), "w", encoding="utf-8") as f:
         json.dump(best_params, f, ensure_ascii=True, indent=2)
-    with open(
-        os.path.join(output_dir, "best_features.json"), "w", encoding="utf-8"
-    ) as f:
+    with open(os.path.join(output_dir, "best_features.json"), "w", encoding="utf-8") as f:
         json.dump(np.asarray(selected_features).tolist(), f, ensure_ascii=True, indent=2)
-    with open(
-        os.path.join(output_dir, "selected_features.json"), "w", encoding="utf-8"
-    ) as f:
+    with open(os.path.join(output_dir, "selected_features.json"), "w", encoding="utf-8") as f:
         json.dump(np.asarray(selected_features).tolist(), f, ensure_ascii=True, indent=2)
 
     categorical_mapping = fetch_categorical_mapping_by_run_id(run_id=final_model_run_id)
-    with open(
-        os.path.join(output_dir, "categorical_mapping.json"), "w", encoding="utf-8"
-    ) as f:
+    with open(os.path.join(output_dir, "categorical_mapping.json"), "w", encoding="utf-8") as f:
         json.dump(categorical_mapping, f, ensure_ascii=True, indent=2)
 
     manifest = {
@@ -110,9 +96,7 @@ def download_inference_artifacts(
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(
-        description="Download and freeze inference artifacts for API deployment."
-    )
+    parser = argparse.ArgumentParser(description="Download and freeze inference artifacts for API deployment.")
     parser.add_argument(
         "--output-dir",
         default=None,

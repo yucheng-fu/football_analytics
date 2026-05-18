@@ -1,20 +1,22 @@
-import polars as pl
-from sklearn.model_selection import train_test_split
-import optuna
-from utils.statics import tracking_uri
+import logging
+from typing import List, Optional, Tuple, Union
+
 import mlflow
 import numpy as np
-import logging
+import optuna
+import pandas as pd
+import polars as pl
+from catboost import CatBoostClassifier
+from lightgbm import LGBMClassifier
+from sklearn import clone
+from sklearn.model_selection import train_test_split
+from xgboost import XGBClassifier
+
+from feature_engineering.OpenFE.FeatureGenerator import Node
 from model.data_classes import OuterCVResults
 from training.nested_cv_eval import ModelCVEvaluator
-from feature_engineering.OpenFE.FeatureGenerator import Node
+from utils.statics import tracking_uri
 from utils.utils import plot_feature_importance, plot_loss_curve
-from sklearn import clone
-from typing import List, Optional, Tuple, Union
-import pandas as pd
-from lightgbm import LGBMClassifier
-from xgboost import XGBClassifier
-from catboost import CatBoostClassifier
 
 
 class ModelParamTuner(ModelCVEvaluator):
@@ -111,13 +113,11 @@ class ModelParamTuner(ModelCVEvaluator):
         """
         fit_params = params.copy()
 
-        X_train_selected, X_val_selected, selected_features = (
-            self._get_selected_features(
-                X_train=X_train,
-                X_val=X_val,
-                y_train=y_train,
-                params=fit_params,
-            )
+        X_train_selected, X_val_selected, selected_features = self._get_selected_features(
+            X_train=X_train,
+            X_val=X_val,
+            y_train=y_train,
+            params=fit_params,
         )
 
         category_schema = self._extract_category_schema(X_train_selected)
@@ -140,9 +140,7 @@ class ModelParamTuner(ModelCVEvaluator):
             train_loss, valid_loss = self._extract_loss_history(model)
             if train_loss and valid_loss:
                 fig = plot_loss_curve(train_loss, valid_loss, self.model_type)
-                self.mlflow_handler.log_figure(
-                    fig=fig, name=f"{self.model_type}_loss_curve"
-                )
+                self.mlflow_handler.log_figure(fig=fig, name=f"{self.model_type}_loss_curve")
 
         return model, selected_features, category_schema
 
@@ -161,17 +159,10 @@ class ModelParamTuner(ModelCVEvaluator):
         self.logger.info("Fitting final model with best hyperparameters...")
 
         X_train_outer_pd = self._apply_categorical_dtypes(X_train_outer)
-        X_val_outer_pd = (
-            self._apply_categorical_dtypes(X_val_outer)
-            if X_val_outer is not None
-            else None
-        )
+        X_val_outer_pd = self._apply_categorical_dtypes(X_val_outer) if X_val_outer is not None else None
 
         column_transformer = None
-        if (
-            self.use_feature_engineering
-            and self.column_wise_transformations is not None
-        ):
+        if self.use_feature_engineering and self.column_wise_transformations is not None:
             column_transformer = clone(self.column_wise_transformations)
             column_transformer.feature_name_mapping = open_fe_feature_name_mapping or {}
             column_transformer.fit(X_train_outer_pd, feature_nodes=open_fe_nodes)
@@ -179,21 +170,17 @@ class ModelParamTuner(ModelCVEvaluator):
             if X_val_outer_pd is not None:
                 X_val_outer_pd = column_transformer.transform(X_val_outer_pd)
 
-        final_model, selected_features, category_schema = (
-            self._fit_model_and_select_features_with_loss_curve(
-                X_train=X_train_outer_pd,
-                y_train=y_train_outer,
-                params=best_params,
-                X_val=X_val_outer_pd,
-                y_val=y_val_outer,
-                should_plot_loss_curve=plot_loss_curve,
-            )
+        final_model, selected_features, category_schema = self._fit_model_and_select_features_with_loss_curve(
+            X_train=X_train_outer_pd,
+            y_train=y_train_outer,
+            params=best_params,
+            X_val=X_val_outer_pd,
+            y_val=y_val_outer,
+            should_plot_loss_curve=plot_loss_curve,
         )
 
         if self.log_feature_importance:
-            fig = plot_feature_importance(
-                X_train=X_train_outer_pd[selected_features], model=final_model
-            )
+            fig = plot_feature_importance(X_train=X_train_outer_pd[selected_features], model=final_model)
             self.mlflow_handler.log_figure(fig=fig, name="feature_importance")
 
         return final_model, selected_features, category_schema, column_transformer
@@ -218,9 +205,7 @@ class ModelParamTuner(ModelCVEvaluator):
         if self.use_feature_engineering and self.row_wise_transformations is not None:
             X_pd = self.row_wise_transformations.apply_row_wise_transformations(X_pd)
 
-        X_train, X_val, y_train, y_val = train_test_split(
-            X_pd, y_np, test_size=0.2, stratify=y_np, random_state=42
-        )
+        X_train, X_val, y_train, y_val = train_test_split(X_pd, y_np, test_size=0.2, stratify=y_np, random_state=42)
         column_wise_features: List[Node] = []
         formula_to_safe_name: dict[str, str] = {}
 
@@ -236,13 +221,11 @@ class ModelParamTuner(ModelCVEvaluator):
                 else lambda study, trial: None
             )
             if self.use_ofe and self.open_fe_transformations is not None:
-                X_train, X_val, column_wise_features, formula_to_safe_name = (
-                    self._ofe_transform(
-                        X_train_outer=X_train,
-                        y_train_outer=y_train,
-                        X_val_outer=X_val,
-                        i=0,
-                    )
+                X_train, X_val, column_wise_features, formula_to_safe_name = self._ofe_transform(
+                    X_train_outer=X_train,
+                    y_train_outer=y_train,
+                    X_val_outer=X_val,
+                    i=0,
                 )
 
             # 1. Perform full hyperparamter tuning
@@ -281,9 +264,7 @@ class ModelParamTuner(ModelCVEvaluator):
                 column_transformer=column_transformer,
             )
 
-            logged_params = self._augment_params_with_boosting_rounds(
-                best_params=best_params, model=final_model
-            )
+            logged_params = self._augment_params_with_boosting_rounds(best_params=best_params, model=final_model)
 
             self._append_and_log_metrics_and_params(
                 outer_cv_results=outer_cv_results,

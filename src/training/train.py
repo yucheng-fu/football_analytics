@@ -1,37 +1,32 @@
-import logging
 import json
+import logging
 import random
 from typing import List, Optional, Union
 
-from catboost import CatBoostClassifier
-from lightgbm import LGBMClassifier
-from xgboost import XGBClassifier
 import mlflow
 import numpy as np
 import pandas as pd
 import polars as pl
-from lightgbm import LGBMClassifier
-from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
+from lightgbm import LGBMClassifier
 from sklearn.metrics import log_loss
+from xgboost import XGBClassifier
 
+import utils.statics as statics
 from feature_engineering.ColumnTransformer import ColumnTransformer
 from feature_engineering.OpenFE.FeatureGenerator import Node
 from feature_engineering.OpenFE.utils import tree_to_formula
 from feature_engineering.RowWiseTransformations import RowWiseTransformations
-import utils.statics as statics
-from utils.mlflow_handler import MLflowHandler
-from utils.utils import safe_production_transform
+from model.CatBoostWrapper import CatBoostWrapper
 from model.LGBMWrapper import LGBMWrapper
 from model.XGBoostWrapper import XGBoostWrapper
-from model.CatBoostWrapper import CatBoostWrapper
+from utils.mlflow_handler import MLflowHandler
+from utils.utils import safe_production_transform
 
 
 class ModelTrainer:
     logger = logging.getLogger(__name__)
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
     def __init__(
         self,
@@ -51,9 +46,7 @@ class ModelTrainer:
         self.row_wise_features = row_wise_features or []
         self.column_wise_features = column_wise_features or []
         self.row_wise_transformations = (
-            row_wise_transformations
-            if row_wise_transformations is not None
-            else RowWiseTransformations()
+            row_wise_transformations if row_wise_transformations is not None else RowWiseTransformations()
         )
         self.categorical_columns = categorical_columns or []
         self.run_name = run_name
@@ -72,9 +65,7 @@ class ModelTrainer:
         np.random.seed(self.seed)
         random.seed(self.seed)
 
-    def _fetch_model_wrapper(
-        self, model_name: str
-    ) -> Union[LGBMWrapper, XGBoostWrapper, CatBoostWrapper]:
+    def _fetch_model_wrapper(self, model_name: str) -> Union[LGBMWrapper, XGBoostWrapper, CatBoostWrapper]:
         """Factory method to return a model wrapper instance based on the model name.
 
         Args:
@@ -111,9 +102,7 @@ class ModelTrainer:
         )
         self.mlflow_handler.setup()
 
-    def _effective_params(
-        self, model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier]
-    ) -> dict:
+    def _effective_params(self, model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier]) -> dict:
         """Build model params from logged params and metadata fields."""
         params = self.params.copy()
         if "n_estimators_used" in params and "n_estimators" in model.get_params():
@@ -128,26 +117,19 @@ class ModelTrainer:
             return X_pd
         return safe_production_transform(X_pd, self.row_wise_features)
 
-    def _apply_openfe_columnwise_nodes(
-        self, X_pd: pd.DataFrame
-    ) -> tuple[pd.DataFrame, Optional[ColumnTransformer]]:
+    def _apply_openfe_columnwise_nodes(self, X_pd: pd.DataFrame) -> tuple[pd.DataFrame, Optional[ColumnTransformer]]:
         """Apply OpenFE column-wise nodes and return transformed data + fitted transformer."""
         if not self.column_wise_features:
             return X_pd, None
 
         formula_to_safe_name = {
-            tree_to_formula(node): f"ofe_col_{idx + 1}"
-            for idx, node in enumerate(self.column_wise_features)
+            tree_to_formula(node): f"ofe_col_{idx + 1}" for idx, node in enumerate(self.column_wise_features)
         }
-        column_transformer = ColumnTransformer(
-            feature_name_mapping=formula_to_safe_name
-        )
+        column_transformer = ColumnTransformer(feature_name_mapping=formula_to_safe_name)
         column_transformer.fit(X_pd, feature_nodes=self.column_wise_features)
         return column_transformer.transform(X_pd), column_transformer
 
-    def _build_training_frame(
-        self, X_train: pl.DataFrame
-    ) -> tuple[pd.DataFrame, Optional[ColumnTransformer]]:
+    def _build_training_frame(self, X_train: pl.DataFrame) -> tuple[pd.DataFrame, Optional[ColumnTransformer]]:
         """Build training dataframe and return transformed data + fitted column transformer."""
         X_pd = X_train.to_pandas().copy()
         X_pd = self.row_wise_transformations.apply_row_wise_transformations(X_pd)
@@ -239,9 +221,7 @@ class ModelTrainer:
         mlflow.set_tag("categorical_mapping", json.dumps(categorical_mapping))
         mlflow.set_tag("model_type", self.model_type)
         if column_transformer is not None:
-            self.mlflow_handler.log_artifact_pickle(
-                column_transformer, "fitted_column_transformer"
-            )
+            self.mlflow_handler.log_artifact_pickle(column_transformer, "fitted_column_transformer")
         mlflow.log_metric("train_loss", train_log_loss)
 
         # Register and tag model
@@ -265,9 +245,7 @@ class ModelTrainer:
 
         missing_features = [f for f in self.features if f not in X_train_pd.columns]
         if missing_features:
-            raise ValueError(
-                f"Missing selected features after transformations: {missing_features}"
-            )
+            raise ValueError(f"Missing selected features after transformations: {missing_features}")
 
         X_train_final = X_train_pd[self.features]
         categorical_mapping = self._build_categorical_mapping(X_train_final)

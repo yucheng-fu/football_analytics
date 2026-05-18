@@ -1,7 +1,7 @@
-import numpy as np
 from dataclasses import dataclass, field
+from typing import Any, List, Optional
+
 from pydantic import BaseModel
-from typing import List, Any, Optional
 
 
 @dataclass

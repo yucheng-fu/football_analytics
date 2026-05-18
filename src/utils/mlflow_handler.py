@@ -1,17 +1,17 @@
+import logging
 import os
 import pickle
 import tempfile
-from typing import Any, Union, Optional
-import logging
+from typing import Any, Optional, Union
 
 import mlflow
 import numpy as np
 import pandas as pd
-from lightgbm import LGBMClassifier
-from xgboost import XGBClassifier
 from catboost import CatBoostClassifier
+from lightgbm import LGBMClassifier
 from mlflow.models import infer_signature
 from mlflow.tracking import MlflowClient
+from xgboost import XGBClassifier
 
 import utils.statics as statics
 
@@ -44,9 +44,7 @@ class MLflowHandler:
         logging.getLogger("kaleido").setLevel(logging.WARNING)
         logging.getLogger("choreographer").setLevel(logging.WARNING)
 
-    def log_artifact_pickle(
-        self, obj: Any, name: str, artifact_path: str = "pickles"
-    ) -> None:
+    def log_artifact_pickle(self, obj: Any, name: str, artifact_path: str = "pickles") -> None:
         """Serialize an object to a pickle file and log it to MLflow.
 
         Args:

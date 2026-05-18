@@ -11,12 +11,12 @@ from mlflow.tracking import MlflowClient
 
 from feature_engineering.OpenFE.openfe import tree_to_formula
 from feature_engineering.RowWiseTransformations import RowWiseTransformations
-from model.data_classes import LGBMParams, XGBoostParams, CatBoostParams, OuterCVResults
+from model.data_classes import CatBoostParams, LGBMParams, OuterCVResults, XGBoostParams
 from utils.statics import (
-    lightgbm_model_name,
-    xgboost_model_name,
     catboost_model_name,
+    lightgbm_model_name,
     tracking_uri,
+    xgboost_model_name,
 )
 
 
@@ -38,9 +38,7 @@ def get_parent_run_id_from_experiment(
             filter_string=" and ".join(filter_string) if filter_string else None,
             order_by=["attributes.start_time DESC"],
         )
-        parent_run_id = next(
-            run.info.run_id for run in runs if "mlflow.parentRunId" not in run.data.tags
-        )
+        parent_run_id = next(run.info.run_id for run in runs if "mlflow.parentRunId" not in run.data.tags)
 
     return parent_run_id
 
@@ -69,9 +67,7 @@ def get_best_params_and_features_from_parent_run_id(
     param_schema = schema_map.get(model_type.lower())
     best_params = dict(raw_params)
 
-    validated_fields = {
-        k: raw_params[k] for k in param_schema.model_fields if k in raw_params
-    }
+    validated_fields = {k: raw_params[k] for k in param_schema.model_fields if k in raw_params}
     typed_params = param_schema(**validated_fields)
 
     best_params.update(typed_params.model_dump())
@@ -96,9 +92,7 @@ def resolve_downloaded_pickle_path(local_path: str) -> str:
         if pkl_files:
             return pkl_files[0]
 
-    raise ValueError(
-        f"Could not resolve pickle file from downloaded path: {local_path}"
-    )
+    raise ValueError(f"Could not resolve pickle file from downloaded path: {local_path}")
 
 
 def get_ofe_feature_nodes_from_run_id(
@@ -114,9 +108,7 @@ def get_ofe_feature_nodes_from_run_id(
     artifact_paths = [item.path for item in artifacts]
 
     if row_artifact_name is None:
-        row_candidates = sorted(
-            [p for p in artifact_paths if "row_wise_features" in os.path.basename(p)]
-        )
+        row_candidates = sorted([p for p in artifact_paths if "row_wise_features" in os.path.basename(p)])
         if not row_candidates:
             raise ValueError(f"No row-wise feature pickle found under run_id={run_id}")
         row_artifact_path = row_candidates[-1]
@@ -124,13 +116,9 @@ def get_ofe_feature_nodes_from_run_id(
         row_artifact_path = f"pickles/{row_artifact_name}.pkl"
 
     if column_artifact_name is None:
-        column_candidates = sorted(
-            [p for p in artifact_paths if "column_wise_features" in os.path.basename(p)]
-        )
+        column_candidates = sorted([p for p in artifact_paths if "column_wise_features" in os.path.basename(p)])
         if not column_candidates:
-            raise ValueError(
-                f"No column-wise feature pickle found under run_id={run_id}"
-            )
+            raise ValueError(f"No column-wise feature pickle found under run_id={run_id}")
         column_artifact_path = column_candidates[-1]
     else:
         column_artifact_path = f"pickles/{column_artifact_name}.pkl"
@@ -181,17 +169,13 @@ def fetch_categorical_mapping_by_run_id(run_id: str) -> dict[str, list]:
     try:
         mapping = json.loads(mapping_raw)
     except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"Invalid categorical_mapping JSON for run_id={run_id}."
-        ) from exc
+        raise ValueError(f"Invalid categorical_mapping JSON for run_id={run_id}.") from exc
     if not isinstance(mapping, dict):
         raise ValueError(f"categorical_mapping tag is not a dict for run_id={run_id}.")
     return mapping
 
 
-def fetch_fitted_column_transformer_by_run_id(
-    run_id: str, artifact_name: str = "fitted_column_transformer.pkl"
-):
+def fetch_fitted_column_transformer_by_run_id(run_id: str, artifact_name: str = "fitted_column_transformer.pkl"):
     """Fetch fitted ColumnTransformer pickle artifact from an MLflow run."""
     mlflow.set_tracking_uri(tracking_uri)
     client = MlflowClient()
@@ -219,14 +203,8 @@ def load_inference_bundle_from_local_artifacts(
     selected_features_path = os.path.join(artifact_dir, "selected_features.json")
     categorical_mapping_path = os.path.join(artifact_dir, "categorical_mapping.json")
 
-    resolved_params_path = (
-        params_path if os.path.exists(params_path) else best_params_path
-    )
-    resolved_best_features_path = (
-        best_features_path
-        if os.path.exists(best_features_path)
-        else selected_features_path
-    )
+    resolved_params_path = params_path if os.path.exists(params_path) else best_params_path
+    resolved_best_features_path = best_features_path if os.path.exists(best_features_path) else selected_features_path
 
     required_paths = [
         model_dir,
@@ -266,9 +244,7 @@ def load_inference_bundle_from_local_artifacts(
         params = json.load(params_file)
     with open(resolved_best_features_path, "r", encoding="utf-8") as best_features_file:
         best_features = np.array(json.load(best_features_file))
-    with open(
-        categorical_mapping_path, "r", encoding="utf-8"
-    ) as categorical_mapping_file:
+    with open(categorical_mapping_path, "r", encoding="utf-8") as categorical_mapping_file:
         categorical_mapping = json.load(categorical_mapping_file)
 
     return {
@@ -299,9 +275,7 @@ def safe_production_transform(X_new, fitted_features_list):
     return X_out
 
 
-def apply_saved_categorical_mapping(
-    X_pd: pd.DataFrame, categorical_mapping: dict[str, list] | None
-) -> pd.DataFrame:
+def apply_saved_categorical_mapping(X_pd: pd.DataFrame, categorical_mapping: dict[str, list] | None) -> pd.DataFrame:
     """Apply saved training categorical mapping for production-safe inference."""
     if not categorical_mapping:
         return X_pd
@@ -322,9 +296,7 @@ def fetch_inference_bundle(
     """Fetch a complete inference bundle from MLflow."""
     resolved_metadata_run_id = metadata_run_id or model_run_id
     if resolved_metadata_run_id is None:
-        raise ValueError(
-            "metadata_run_id is required when model_run_id is not provided."
-        )
+        raise ValueError("metadata_run_id is required when model_run_id is not provided.")
 
     model = fetch_model(lightgbm_model_name, alias="production")
     fitted_column_transformer = fetch_fitted_column_transformer_by_run_id(
@@ -334,9 +306,7 @@ def fetch_inference_bundle(
     best_params, selected_features = get_best_params_and_features_from_parent_run_id(
         parent_run_id=resolved_metadata_run_id
     )
-    categorical_mapping = fetch_categorical_mapping_by_run_id(
-        run_id=resolved_metadata_run_id
-    )
+    categorical_mapping = fetch_categorical_mapping_by_run_id(run_id=resolved_metadata_run_id)
 
     return {
         "model": model,
@@ -360,20 +330,14 @@ def prepare_inference_frame(
     row_wise_transformations: RowWiseTransformations | None = None,
 ) -> pd.DataFrame:
     """Build inference frame using eval-equivalent preprocessing steps."""
-    transformer = (
-        row_wise_transformations
-        if row_wise_transformations is not None
-        else RowWiseTransformations()
-    )
+    transformer = row_wise_transformations if row_wise_transformations is not None else RowWiseTransformations()
     X_out = transformer.apply_row_wise_transformations(X_pd.copy())
 
     if row_wise_features:
         X_out = safe_production_transform(X_out, row_wise_features)
 
     if column_transformer is not None:
-        transformed = column_transformer.transform(
-            X_out, feature_nodes=column_wise_features
-        )
+        transformed = column_transformer.transform(X_out, feature_nodes=column_wise_features)
         if isinstance(transformed, pd.DataFrame):
             X_out = transformed
         else:

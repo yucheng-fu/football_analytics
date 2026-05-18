@@ -1,10 +1,11 @@
+from typing import Any, Dict
+
+import numpy as np
 import optuna
 import pandas as pd
-import numpy as np
-
 from catboost import CatBoostClassifier
 from optuna.integration import CatBoostPruningCallback
-from typing import Dict, Any
+
 from model.BaseModelWrapper import BaseModelWrapper
 
 
@@ -13,12 +14,8 @@ class CatBoostWrapper(BaseModelWrapper):
         params = {
             "iterations": trial.suggest_int("iterations", 100, 1000),  # number of trees
             "depth": trial.suggest_int("depth", 4, 8),  # depth of tree
-            "learning_rate": trial.suggest_float(
-                "learning_rate", 0.01, 0.2
-            ),  # step size for optimisation
-            "reg_lambda": trial.suggest_float(
-                "reg_lambda", 1e-4, 0.3, log=True
-            ),  # L2 regularisation
+            "learning_rate": trial.suggest_float("learning_rate", 0.01, 0.2),  # step size for optimisation
+            "reg_lambda": trial.suggest_float("reg_lambda", 1e-4, 0.3, log=True),  # L2 regularisation
         }
 
         return params
@@ -53,9 +50,7 @@ class CatBoostWrapper(BaseModelWrapper):
             y_train,
             eval_set=(X_val, y_val) if X_val is not None else None,
             cat_features=cat_cols,
-            early_stopping_rounds=(
-                self.early_stopping_rounds if use_early_stopping else None
-            ),
+            early_stopping_rounds=(self.early_stopping_rounds if use_early_stopping else None),
             callbacks=callbacks,
         )
 

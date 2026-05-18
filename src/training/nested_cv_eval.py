@@ -1,42 +1,42 @@
-from typing import Callable, Tuple, Optional, List, Union, Any
-import polars as pl
+import logging
 import os
 import random
-from lightgbm import LGBMClassifier
-from xgboost import XGBClassifier
-from catboost import CatBoostClassifier
-from sklearn.model_selection import StratifiedKFold
-from sklearn.feature_selection import RFE
-from sklearn.metrics import log_loss
-from sklearn import clone
-import optuna
-import utils.statics as statics
-from utils.utils import plot_feature_importance, plot_calibration_curve
-from utils.mlflow_handler import MLflowHandler
+from typing import Callable, List, Optional, Tuple, Union
+
 import mlflow
+import numpy as np
+import optuna
+import pandas as pd
+import polars as pl
+from catboost import CatBoostClassifier
+from lightgbm import LGBMClassifier
 from mlflow.entities import Run
 from mlflow.tracking import MlflowClient
 from mlflow.utils.mlflow_tags import MLFLOW_PARENT_RUN_ID
-import numpy as np
-import logging
-from model.data_classes import OuterCVResults
 from optuna.visualization import plot_param_importances
-import pandas as pd
+from sklearn import clone
+from sklearn.feature_selection import RFE
+from sklearn.metrics import log_loss
+from sklearn.model_selection import StratifiedKFold
+from xgboost import XGBClassifier
+
+import utils.statics as statics
 from feature_engineering.ColumnTransformer import ColumnTransformer
-from feature_engineering.RowWiseTransformations import RowWiseTransformations
-from feature_engineering.OpenFETransformations import OpenFETransformations
 from feature_engineering.OpenFE.FeatureGenerator import Node
 from feature_engineering.OpenFE.utils import tree_to_formula
+from feature_engineering.OpenFETransformations import OpenFETransformations
+from feature_engineering.RowWiseTransformations import RowWiseTransformations
+from model.CatBoostWrapper import CatBoostWrapper
+from model.data_classes import OuterCVResults
 from model.LGBMWrapper import LGBMWrapper
 from model.XGBoostWrapper import XGBoostWrapper
-from model.CatBoostWrapper import CatBoostWrapper
+from utils.mlflow_handler import MLflowHandler
+from utils.utils import plot_calibration_curve, plot_feature_importance
 
 
 class ModelCVEvaluator:
     logger = logging.getLogger(__name__)
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
-    )
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
     def __init__(
         self,
@@ -77,18 +77,12 @@ class ModelCVEvaluator:
         self.log_parameter_importance = log_parameter_importance
         self.log_feature_importance = log_feature_importance
         self.log_calibration_curve = log_calibration_curve
-        self.categorical_columns = (
-            categorical_columns if categorical_columns is not None else []
-        )
+        self.categorical_columns = categorical_columns if categorical_columns is not None else []
         self.ohe_columns = ohe_columns if ohe_columns is not None else []
         self.seed = 165
         self.n_jobs = max(1, os.cpu_count() - 4) or 1
-        self.inner_cv = StratifiedKFold(
-            n_splits=self.n_inner_splits, shuffle=True, random_state=self.seed
-        )
-        self.outer_cv = StratifiedKFold(
-            n_splits=self.n_outer_splits, shuffle=True, random_state=self.seed
-        )
+        self.inner_cv = StratifiedKFold(n_splits=self.n_inner_splits, shuffle=True, random_state=self.seed)
+        self.outer_cv = StratifiedKFold(n_splits=self.n_outer_splits, shuffle=True, random_state=self.seed)
         self._set_global_seed()
         self.wrapper = self._fetch_model_wrapper(model_name=self.model_type)
         self.mlflow_handler = MLflowHandler(
@@ -102,9 +96,7 @@ class ModelCVEvaluator:
         np.random.seed(self.seed)
         random.seed(self.seed)
 
-    def _fetch_model_wrapper(
-        self, model_name: str
-    ) -> Union[LGBMWrapper, XGBoostWrapper, CatBoostWrapper]:
+    def _fetch_model_wrapper(self, model_name: str) -> Union[LGBMWrapper, XGBoostWrapper, CatBoostWrapper]:
         """Factory method to return a model wrapper instance based on the model name.
 
         Args:
@@ -138,9 +130,7 @@ class ModelCVEvaluator:
         cat_cols = df.select_dtypes(include=["category"]).columns
         return {col: df[col].cat.categories for col in cat_cols}
 
-    def _apply_category_schema(
-        self, df: pd.DataFrame, schema: dict[str, pd.Index]
-    ) -> pd.DataFrame:
+    def _apply_category_schema(self, df: pd.DataFrame, schema: dict[str, pd.Index]) -> pd.DataFrame:
         """Apply a predefined categorical schema to a dataframe.
 
         Args:
@@ -239,9 +229,7 @@ class ModelCVEvaluator:
 
         # RFE
         if self.use_feature_selection:
-            params["n_features_to_select"] = trial.suggest_float(
-                "n_features_to_select", 0.5, 1.0
-            )
+            params["n_features_to_select"] = trial.suggest_float("n_features_to_select", 0.5, 1.0)
 
         return params
 
@@ -306,13 +294,9 @@ class ModelCVEvaluator:
             np.ndarray: An array initialized to store out-of-fold predictions.
         """
         if n_classes == 2:
-            return np.zeros(
-                n_samples
-            )  # Store only positive class probability for binary classification
+            return np.zeros(n_samples)  # Store only positive class probability for binary classification
         else:
-            return np.zeros(
-                (n_samples, n_classes)
-            )  # Store probabilities for all classes for multiclass classification
+            return np.zeros((n_samples, n_classes))  # Store probabilities for all classes for multiclass classification
 
     def _append_and_log_metrics_and_params(
         self,
@@ -414,19 +398,14 @@ class ModelCVEvaluator:
             float: Log-loss on the validation fold.
         """
         # 1. Feature Engineering
-        if (
-            self.use_feature_engineering
-            and self.column_wise_transformations is not None
-        ):
+        if self.use_feature_engineering and self.column_wise_transformations is not None:
             X_val_outer = column_transformer.transform(X_val_outer)
 
         # 2. Choose selected features
         X_val_outer_selected = X_val_outer[selected_features]
 
         # 3. Enforce training-time category schema to ensure correct integer encoding
-        X_val_outer_selected = self._apply_category_schema(
-            X_val_outer_selected, category_schema
-        )
+        X_val_outer_selected = self._apply_category_schema(X_val_outer_selected, category_schema)
 
         # 4. Predict and evaluate
         y_pred_proba = model.predict_proba(X_val_outer_selected)
@@ -472,9 +451,7 @@ class ModelCVEvaluator:
             return (X_train, X_val, selected_features)
 
         n_features_to_select = params.pop("n_features_to_select")
-        rfe = self._get_feature_selector(
-            fit_params=params, n_features_to_select=n_features_to_select
-        )
+        rfe = self._get_feature_selector(fit_params=params, n_features_to_select=n_features_to_select)
 
         # Build category schema from training data
         category_schema_rfe = self._extract_category_schema(X_train)
@@ -492,9 +469,7 @@ class ModelCVEvaluator:
 
         return (X_train_selected, X_val_selected, selected_features)
 
-    def _get_feature_selector(
-        self, fit_params: dict, n_features_to_select: float, transform: str = "pandas"
-    ) -> RFE:
+    def _get_feature_selector(self, fit_params: dict, n_features_to_select: float, transform: str = "pandas") -> RFE:
         """Create an RFE selector configured with the current base estimator.
 
         Args:
@@ -519,9 +494,7 @@ class ModelCVEvaluator:
 
         return rfe
 
-    def _extract_validation_loss(
-        self, model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier]
-    ) -> float:
+    def _extract_validation_loss(self, model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier]) -> float:
         """
         Extracts the final inner validation fold loss value from
         the model's evals_result_ dictionary, tailored to each framework.
@@ -569,9 +542,7 @@ class ModelCVEvaluator:
         all_params = self._fetch_param_suggestions(trial)
         inner_fold_scores = []
 
-        for inner_train_idx, inner_val_idx in self.inner_cv.split(
-            X_train_outer, y_train_outer
-        ):
+        for inner_train_idx, inner_val_idx in self.inner_cv.split(X_train_outer, y_train_outer):
             X_train_inner = X_train_outer.iloc[inner_train_idx]
             X_val_inner = X_train_outer.iloc[inner_val_idx]
             y_train_inner, y_val_inner = (
@@ -580,14 +551,9 @@ class ModelCVEvaluator:
             )
 
             # 1. Feature engineering
-            if (
-                self.use_feature_engineering
-                and self.column_wise_transformations is not None
-            ):
+            if self.use_feature_engineering and self.column_wise_transformations is not None:
                 column_transformer = clone(self.column_wise_transformations)
-                column_transformer.feature_name_mapping = (
-                    open_fe_feature_name_mapping or {}
-                )
+                column_transformer.feature_name_mapping = open_fe_feature_name_mapping or {}
                 column_transformer.fit(X_train_inner, feature_nodes=open_fe_nodes)
                 X_train_inner = column_transformer.transform(X_train_inner)
                 X_val_inner = column_transformer.transform(X_val_inner)
@@ -636,34 +602,25 @@ class ModelCVEvaluator:
             n_jobs=self.n_jobs,
         )
 
-        X_train_outer, X_val_outer, mapping = (
-            self.open_fe_transformations.apply_openfe_features(
-                X_train=X_train_outer,
-                X_val=X_val_outer,
-                features=row_wise_features,
-                n_jobs=self.n_jobs,
-            )
+        X_train_outer, X_val_outer, mapping = self.open_fe_transformations.apply_openfe_features(
+            X_train=X_train_outer,
+            X_val=X_val_outer,
+            features=row_wise_features,
+            n_jobs=self.n_jobs,
         )
 
         column_wise_mapping = {
-            f"ofe_col_{idx + 1}": tree_to_formula(feature)
-            for idx, feature in enumerate(column_wise_features)
+            f"ofe_col_{idx + 1}": tree_to_formula(feature) for idx, feature in enumerate(column_wise_features)
         }
-        formula_to_safe_name = {
-            formula: safe_name for safe_name, formula in column_wise_mapping.items()
-        }
+        formula_to_safe_name = {formula: safe_name for safe_name, formula in column_wise_mapping.items()}
         full_mapping = {**mapping, **column_wise_mapping}
 
-        self.mlflow_handler.log_artifact_pickle(
-            row_wise_features, f"ofe_row_wise_features_fold_{i}"
-        )
+        self.mlflow_handler.log_artifact_pickle(row_wise_features, f"ofe_row_wise_features_fold_{i}")
         self.mlflow_handler.log_artifact_pickle(
             column_wise_features,
             f"ofe_column_wise_features_fold_{i}",
         )
-        self.mlflow_handler.log_artifact_pickle(
-            full_mapping, f"ofe_feature_mapping_fold_{i}"
-        )
+        self.mlflow_handler.log_artifact_pickle(full_mapping, f"ofe_feature_mapping_fold_{i}")
 
         for feat_name, formula in full_mapping.items():
             self.logger.info(f"Feature: {feat_name:20} | Formula: {formula}")
@@ -756,13 +713,11 @@ class ModelCVEvaluator:
         fit_params = params
 
         # 1. Feature selection
-        X_train_selected, X_val_selected, selected_features = (
-            self._get_selected_features(
-                X_train=X_train,
-                X_val=X_val,
-                y_train=y_train,
-                params=fit_params,
-            )
+        X_train_selected, X_val_selected, selected_features = self._get_selected_features(
+            X_train=X_train,
+            X_val=X_val,
+            y_train=y_train,
+            params=fit_params,
         )
 
         # 2. Categorical Handling
@@ -813,34 +768,25 @@ class ModelCVEvaluator:
 
         # 1. Feature Engineering
         column_transformer = None
-        if (
-            self.use_feature_engineering
-            and self.column_wise_transformations is not None
-        ):
+        if self.use_feature_engineering and self.column_wise_transformations is not None:
             column_transformer = clone(self.column_wise_transformations)
             column_transformer.feature_name_mapping = open_fe_feature_name_mapping or {}
             column_transformer.fit(X_train_outer, feature_nodes=open_fe_nodes)
             X_train_outer = column_transformer.transform(X_train_outer)
 
-        final_model, selected_features, category_schema = (
-            self._fit_model_and_select_features(
-                X_train=X_train_outer,
-                y_train=y_train_outer,
-                params=fit_params,
-                use_early_stopping=True,
-            )
+        final_model, selected_features, category_schema = self._fit_model_and_select_features(
+            X_train=X_train_outer,
+            y_train=y_train_outer,
+            params=fit_params,
+            use_early_stopping=True,
         )
         if self.log_feature_importance:
-            fig = plot_feature_importance(
-                X_train=X_train_outer[selected_features], model=final_model
-            )
+            fig = plot_feature_importance(X_train=X_train_outer[selected_features], model=final_model)
             self.mlflow_handler.log_figure(fig=fig, name="feature_importance")
 
         return final_model, selected_features, category_schema, column_transformer
 
-    def get_generalisation_error(
-        self, X_train: pl.DataFrame, y_train: pl.DataFrame
-    ) -> OuterCVResults:
+    def get_generalisation_error(self, X_train: pl.DataFrame, y_train: pl.DataFrame) -> OuterCVResults:
         """Run nested CV and return aggregated outer-fold evaluation results.
 
         Args:
@@ -855,9 +801,7 @@ class ModelCVEvaluator:
         X_train_pd = X_train.to_pandas()
         y_train_np = y_train.to_numpy().ravel()
         n_classes = len(np.unique(y_train_np))
-        oof_predictions = self._init_oof_predictions(
-            n_samples=len(X_train_pd), n_classes=n_classes
-        )
+        oof_predictions = self._init_oof_predictions(n_samples=len(X_train_pd), n_classes=n_classes)
 
         outer_cv_results = OuterCVResults()
 
@@ -866,17 +810,11 @@ class ModelCVEvaluator:
 
         # Apply rowwise transformations to the entire dataset
         if self.use_feature_engineering and self.row_wise_transformations is not None:
-            X_train_pd = self.row_wise_transformations.apply_row_wise_transformations(
-                X_train_pd
-            )
+            X_train_pd = self.row_wise_transformations.apply_row_wise_transformations(X_train_pd)
 
-        with mlflow.start_run(
-            run_name=f"{self.run_name}_{self.model_type}"
-        ) as parent_run:
+        with mlflow.start_run(run_name=f"{self.run_name}_{self.model_type}") as parent_run:
             outer_cv_results.parent_run_id = parent_run.info.run_id
-            for i, (train_idx, val_idx) in enumerate(
-                self.outer_cv.split(X_train_pd, y_train_np)
-            ):
+            for i, (train_idx, val_idx) in enumerate(self.outer_cv.split(X_train_pd, y_train_np)):
                 X_train_outer = X_train_pd.iloc[train_idx]
                 X_val_outer = X_train_pd.iloc[val_idx]
                 y_train_outer = y_train_np[train_idx]
@@ -884,9 +822,7 @@ class ModelCVEvaluator:
                 column_wise_features: List[Node] = []
                 formula_to_safe_name: dict[str, str] = {}
 
-                with mlflow.start_run(
-                    nested=True, run_name=f"Outer_fold_{i + 1}"
-                ) as run:
+                with mlflow.start_run(nested=True, run_name=f"Outer_fold_{i + 1}") as run:
                     parent_id = run.info.run_id
                     callback_fn = (
                         self._mlflow_callback(

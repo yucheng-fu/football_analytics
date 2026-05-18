@@ -1,8 +1,9 @@
-import pytest
 import pandas as pd
+import pytest
 from pandas.testing import assert_frame_equal
-from feature_engineering.OpenFE.FeatureGenerator import FNode, Node
+
 from feature_engineering.ColumnTransformer import ColumnTransformer
+from feature_engineering.OpenFE.FeatureGenerator import FNode, Node
 
 
 @pytest.fixture
@@ -71,9 +72,7 @@ def test_groupby_then_mean_uses_training_aggregates(sample_data):
     # Assert
     expected_result = test.copy()
     train_group_means = train.groupby("cat")["val"].mean()
-    expected_result["GroupByThenMean(val,cat)"] = (
-        test["cat"].map(train_group_means).astype(float)
-    )
+    expected_result["GroupByThenMean(val,cat)"] = test["cat"].map(train_group_means).astype(float)
     expected_result["cat"] = expected_result["cat"].astype("category")
 
     assert_frame_equal(auto_result, expected_result, check_dtype=False, atol=1e-8)
@@ -99,9 +98,7 @@ def test_combine_transformation_assigns_ids_and_marks_unknown_pairs(
     pair_to_id = {pair: idx for idx, pair in enumerate(uniques)}
 
     test_pairs = test["cat"].astype(str) + "_" + test["cat2"].astype(str)
-    expected_result["Combine(cat,cat2)"] = (
-        test_pairs.map(pair_to_id).fillna(-1).astype(float)
-    )
+    expected_result["Combine(cat,cat2)"] = test_pairs.map(pair_to_id).fillna(-1).astype(float)
     expected_result["cat"] = expected_result["cat"].astype("category")
     expected_result["cat2"] = expected_result["cat2"].astype("category")
 
@@ -126,9 +123,7 @@ def test_combine_then_freq_maps_pair_frequency_from_training(
     train_pairs = train["cat"].astype(str) + "_" + train["cat2"].astype(str)
     pair_counts = train_pairs.value_counts()
     test_pairs = test["cat"].astype(str) + "_" + test["cat2"].astype(str)
-    expected_result["CombineThenFreq(cat,cat2)"] = test_pairs.map(pair_counts).astype(
-        float
-    )
+    expected_result["CombineThenFreq(cat,cat2)"] = test_pairs.map(pair_counts).astype(float)
     expected_result["cat"] = expected_result["cat"].astype("category")
     expected_result["cat2"] = expected_result["cat2"].astype("category")
 
