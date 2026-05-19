@@ -1,8 +1,10 @@
-from typing import Tuple, List
-import pandas as pd
+from typing import List, Tuple
+
 import numpy as np
-from feature_engineering.OpenFE.utils import tree_to_formula, transform
+import pandas as pd
+
 from feature_engineering.OpenFE.openfe import OpenFE
+from feature_engineering.OpenFE.utils import transform, tree_to_formula
 
 
 class OpenFETransformations:
@@ -66,13 +68,8 @@ class OpenFETransformations:
             n_jobs=n_jobs,
         )
 
-        generated_cols = [
-            c for c in X_train_transformed.columns if c not in original_cols
-        ]
+        generated_cols = [c for c in X_train_transformed.columns if c not in original_cols]
 
-        mapping = {
-            gen_col: tree_to_formula(f)
-            for gen_col, f in zip(generated_cols, selected_features)
-        }
+        mapping = {gen_col: tree_to_formula(f) for gen_col, f in zip(generated_cols, selected_features)}
 
         return X_train_transformed, X_val_transformed, mapping

@@ -2,36 +2,35 @@ import json
 import os
 import pickle
 import tempfile
-from typing import Any, Tuple, List, Optional
-from mlflow.entities import ViewType
+from typing import Any, List, Optional, Tuple
 
 import matplotlib.pyplot as plt
+import mlflow
 import mplsoccer as mpl
 import numpy as np
 import pandas as pd
+import polars as pl
+import seaborn as sns
 import shap
+from lightgbm import LGBMClassifier
 from matplotlib.axes import Axes
 from matplotlib.colors import ListedColormap
 from matplotlib.patches import Ellipse, Patch
-from scipy.stats import multivariate_normal
-from sklearn.mixture import GaussianMixture
-import polars as pl
-import seaborn as sns
-from sklearn.feature_selection import mutual_info_classif
-from sklearn.calibration import calibration_curve
-import mlflow
+from mlflow.entities import ViewType
 from mlflow.tracking import MlflowClient
-from model.data_classes import LGBMParams, OuterCVResults
-from lightgbm import LGBMClassifier
+from scipy.stats import multivariate_normal
+from sklearn.calibration import calibration_curve
+from sklearn.feature_selection import mutual_info_classif
+from sklearn.mixture import GaussianMixture
+
+from feature_engineering.ColumnTransformer import ColumnTransformer
 from feature_engineering.OpenFE.openfe import tree_to_formula
 from feature_engineering.RowWiseTransformations import RowWiseTransformations
-from feature_engineering.ColumnTransformer import ColumnTransformer
-
-
+from model.data_classes import LGBMParams, OuterCVResults
 from utils.statics import (
     france_argentina_match_id,
-    tracking_uri,
     lightgbm_model_name,
+    tracking_uri,
     xgboost_model_name,
 )
 
@@ -65,9 +64,7 @@ def build_cmap(x: Tuple[int, int, int], y: Tuple[int, int, int]) -> ListedColorm
     return ListedColormap(newcolors)
 
 
-def invert_orientation(
-    x: np.array, y: np.array, PITCH_X: int, PITCH_Y: int
-) -> Tuple[np.array, np.array]:
+def invert_orientation(x: np.array, y: np.array, PITCH_X: int, PITCH_Y: int) -> Tuple[np.array, np.array]:
     """Invert the orientation of the pitch coordinates.
 
     Args:
@@ -126,8 +123,7 @@ def add_legend(
         ]
     else:
         legend_elements = [
-            Patch(facecolor=colors[i], edgecolor="black", alpha=0.5, label=labels[i])
-            for i in range(num_elements)
+            Patch(facecolor=colors[i], edgecolor="black", alpha=0.5, label=labels[i]) for i in range(num_elements)
         ]
     ax.legend(handles=legend_elements, loc="upper right")
 
@@ -144,9 +140,7 @@ def plot_player_positions(
     fig_name: str,
 ) -> None:
     # Plot player positions
-    pitch.scatter(
-        x, y, s=300, c=color, edgecolors="black", linewidth=1.5, ax=ax, zorder=3
-    )
+    pitch.scatter(x, y, s=300, c=color, edgecolors="black", linewidth=1.5, ax=ax, zorder=3)
 
     # Add jersey numbers and player names
     for xi, yi, num, name in zip(x, y, jerseys, names):
@@ -230,9 +224,85 @@ def plot_pitch_with_shots(
     plt.show()
 
 
-def plot_gmm_components(
-    gmm: GaussianMixture, ax: Axes, color: str, fig_name: str
+def plot_passes_by_predicted_probability(
+    result_df: pl.DataFrame,
+    name: str = "passes_by_predicted_probability.png",
+    show_probability: bool = False,
 ) -> None:
+    """Plot pass arrows on a pitch, colored by predicted-class probability.
+
+    Args:
+        result_df (pl.DataFrame): DataFrame containing pass coordinates and prediction outputs.
+        name (str): Name used in the plot title.
+        show_probability (bool): Whether to plot probabilities as text next to arrows.
+    """
+    required_cols = {
+        "start_x",
+        "start_y",
+        "end_x",
+        "end_y",
+        "prediction",
+        "true_class_probability",
+    }
+    missing_cols = required_cols - set(result_df.columns)
+    if missing_cols:
+        raise ValueError(f"Missing required columns: {sorted(missing_cols)}")
+
+    result_df = result_df.with_columns(
+        pl.when(pl.col("prediction") == 1)
+        .then(pl.col("true_class_probability"))
+        .otherwise(1 - pl.col("true_class_probability"))
+        .alias("predicted_class_probability")
+    )
+
+    pitch = mpl.Pitch()
+    fig, ax = pitch.draw(figsize=(12, 8))
+
+    cmap = plt.cm.viridis
+    norm = plt.Normalize(0, 1)
+
+    plot_df = result_df.select(
+        "start_x",
+        "start_y",
+        "end_x",
+        "end_y",
+        "predicted_class_probability",
+    )
+
+    for start_x, start_y, end_x, end_y, predicted_prob in plot_df.iter_rows():
+        ax.annotate(
+            "",
+            xy=(end_x, end_y),
+            xytext=(start_x, start_y),
+            arrowprops={
+                "arrowstyle": "->",
+                "lw": 1.2,
+                "color": cmap(norm(predicted_prob)),
+                "alpha": 0.85,
+            },
+        )
+        if show_probability:
+            label_x = (start_x + end_x) / 2
+            label_y = (start_y + end_y) / 2
+            ax.text(
+                label_x,
+                label_y,
+                f"{predicted_prob:.5f}",
+                fontsize=7,
+                color="black",
+                ha="center",
+                va="center",
+            )
+
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
+    cbar = fig.colorbar(sm, ax=ax, shrink=0.8)
+    cbar.set_label("Predicted class probability")
+    ax.set_title("Passes colored by predicted class probability")
+    plt.savefig(f"../../figures/analysis-02/{name}", dpi=300, bbox_inches="tight")
+    plt.show()
+
+
+def plot_gmm_components(gmm: GaussianMixture, ax: Axes, color: str, fig_name: str) -> None:
     """Plot GMM components as ellipses on the pitch.
 
     Args:
@@ -283,17 +353,13 @@ def evaluate_and_plot_gmm_pdf(
 
     grid_points = np.column_stack([xx.ravel(), yy.ravel()])
 
-    for i, (mean, covariance, weight) in enumerate(
-        zip(gmm.means_, gmm.covariances_, gmm.weights_)
-    ):
+    for i, (mean, covariance, weight) in enumerate(zip(gmm.means_, gmm.covariances_, gmm.weights_)):
         pdf_values = multivariate_normal.pdf(grid_points, mean=mean, cov=covariance)
         density_components[:, :, i] = weight * pdf_values.reshape(xx.shape)
 
     total_density = density_components.sum(axis=-1)
 
-    ax.contourf(
-        xx, yy, total_density, levels=10, cmap=cmap, alpha=0.8, antialiased=True
-    )
+    ax.contourf(xx, yy, total_density, levels=10, cmap=cmap, alpha=0.8, antialiased=True)
     plt.title("GMM Probability Density Function (PDF) for possession-related events")
     plt.savefig(fig_name, dpi=300, bbox_inches="tight")
     plt.show()
@@ -308,20 +374,14 @@ def split_train_test(passes_df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFram
     Returns:
         tuple[pl.DataFrame, pl.DataFrame]: Train and test DataFrames
     """
-    train_df = passes_df.filter(pl.col("match_id") != france_argentina_match_id).drop(
-        pl.col("match_id")
-    )
+    train_df = passes_df.filter(pl.col("match_id") != france_argentina_match_id).drop(pl.col("match_id"))
 
-    test_df = passes_df.filter(pl.col("match_id") == france_argentina_match_id).drop(
-        pl.col("match_id")
-    )
+    test_df = passes_df.filter(pl.col("match_id") == france_argentina_match_id).drop(pl.col("match_id"))
 
     return train_df, test_df
 
 
-def plot_correlations(
-    train_df: pl.DataFrame, numerical_cols: List[str], fig_name: str
-) -> None:
+def plot_correlations(train_df: pl.DataFrame, numerical_cols: List[str], fig_name: str) -> None:
     """Plot correlation plot for continuous features
 
     Args:
@@ -354,9 +414,7 @@ def plot_numerical_feature_distributions(
     ax = ax.ravel()
 
     for i, column in enumerate(numerical_cols):
-        sns.histplot(
-            train_df.select(column).to_series(), bins="auto", kde=True, ax=ax[i]
-        )
+        sns.histplot(train_df.select(column).to_series(), bins="auto", kde=True, ax=ax[i])
         ax[i].set_title(f"Distribution of {column}")
         ax[i].set_xlabel(column)
         ax[i].set_ylabel("Frequency")
@@ -364,9 +422,7 @@ def plot_numerical_feature_distributions(
     plt.show()
 
 
-def plot_categorical_feature_distributions(
-    train_df: pl.DataFrame, categorical_cols: List[str], fig_name: str
-) -> None:
+def plot_categorical_feature_distributions(train_df: pl.DataFrame, categorical_cols: List[str], fig_name: str) -> None:
     """Plot categorical feature distributions
 
     Args:
@@ -392,9 +448,7 @@ def plot_categorical_feature_distributions(
     plt.show()
 
 
-def plot_single_feature_distribution(
-    train_df: pl.DataFrame, col: str, bins: int | str = 30, kde: bool = True
-) -> None:
+def plot_single_feature_distribution(train_df: pl.DataFrame, col: str, bins: int | str = 30, kde: bool = True) -> None:
     """Plot single feature distribution plot
 
     Args:
@@ -423,9 +477,7 @@ def plot_mutual_information(
         y_train (pl.DataFrame): Training labels
         discrete_features (List[bool] | str, optional): How to handle discrete features. Defaults to "auto".
     """
-    mi = mutual_info_classif(
-        X_train, y_train, discrete_features=discrete_features, random_state=165
-    )
+    mi = mutual_info_classif(X_train, y_train, discrete_features=discrete_features, random_state=165)
 
     mi_df = pl.DataFrame({"Feature": X_train.columns, "Mutual Information": mi})
     mi_df = mi_df.sort(by="Mutual Information", descending=True)
@@ -439,9 +491,7 @@ def plot_mutual_information(
     plt.show()
 
 
-def get_parent_run_id_from_experiment(
-    result: OuterCVResults | None, experiment_id: str
-) -> str:
+def get_parent_run_id_from_experiment(result: OuterCVResults | None, experiment_id: str) -> str:
     """Get parent run ID from experiment
 
     Args:
@@ -462,16 +512,12 @@ def get_parent_run_id_from_experiment(
             order_by=["attributes.start_time DESC"],
         )
 
-        parent_run_id = next(
-            run.info.run_id for run in runs if "mlflow.parentRunId" not in run.data.tags
-        )
+        parent_run_id = next(run.info.run_id for run in runs if "mlflow.parentRunId" not in run.data.tags)
 
     return parent_run_id
 
 
-def compute_generalisation_error_from_run_id_and_experiment_id(
-    parent_run_id: str, experiment_id: str
-) -> None:
+def compute_generalisation_error_from_run_id_and_experiment_id(parent_run_id: str, experiment_id: str) -> None:
     """Compute generalisation error from runs
 
     Args:
@@ -492,9 +538,7 @@ def compute_generalisation_error_from_run_id_and_experiment_id(
     std = np.std(loss, ddof=1)
 
     print(f"Number of outer folds: {len(loss)}")
-    print(
-        f"95% confidence interval for best estimate of generalisation: {mean} ± {1.96 * std / np.sqrt(len(loss))}"
-    )
+    print(f"95% confidence interval for best estimate of generalisation: {mean} ± {1.96 * std / np.sqrt(len(loss))}")
 
 
 def get_best_params_and_features_from_parent_run_id(
@@ -516,9 +560,7 @@ def get_best_params_and_features_from_parent_run_id(
     # Start with all raw_params (all MLflow-logged params, as strings)
     best_params = dict(raw_params)
     # Overwrite with validated/typed LGBMParams values for correct types
-    lgbm_params = LGBMParams(
-        **{k: raw_params[k] for k in LGBMParams.model_fields if k in raw_params}
-    )
+    lgbm_params = LGBMParams(**{k: raw_params[k] for k in LGBMParams.model_fields if k in raw_params})
     best_params.update(lgbm_params.model_dump())
 
     best_features = np.array(parent_run.data.tags["selected_features"].split(","))
@@ -541,9 +583,7 @@ def resolve_downloaded_pickle_path(local_path: str) -> str:
         if pkl_files:
             return pkl_files[0]
 
-    raise ValueError(
-        f"Could not resolve pickle file from downloaded path: {local_path}"
-    )
+    raise ValueError(f"Could not resolve pickle file from downloaded path: {local_path}")
 
 
 def get_ofe_feature_nodes_from_run_id(
@@ -574,9 +614,7 @@ def get_ofe_feature_nodes_from_run_id(
     artifact_paths = [item.path for item in artifacts]
 
     if row_artifact_name is None:
-        row_candidates = sorted(
-            [p for p in artifact_paths if "row_wise_features" in os.path.basename(p)]
-        )
+        row_candidates = sorted([p for p in artifact_paths if "row_wise_features" in os.path.basename(p)])
         if not row_candidates:
             raise ValueError(f"No row-wise feature pickle found under run_id={run_id}")
         row_artifact_path = row_candidates[-1]
@@ -584,13 +622,9 @@ def get_ofe_feature_nodes_from_run_id(
         row_artifact_path = f"pickles/{row_artifact_name}.pkl"
 
     if column_artifact_name is None:
-        column_candidates = sorted(
-            [p for p in artifact_paths if "column_wise_features" in os.path.basename(p)]
-        )
+        column_candidates = sorted([p for p in artifact_paths if "column_wise_features" in os.path.basename(p)])
         if not column_candidates:
-            raise ValueError(
-                f"No column-wise feature pickle found under run_id={run_id}"
-            )
+            raise ValueError(f"No column-wise feature pickle found under run_id={run_id}")
         column_artifact_path = column_candidates[-1]
     else:
         column_artifact_path = f"pickles/{column_artifact_name}.pkl"
@@ -609,9 +643,7 @@ def get_ofe_feature_nodes_from_run_id(
     return row_wise_features, column_wise_features
 
 
-def get_registered_model(
-    model_type: str, model_registry_name: str, version: str = "latest"
-) -> LGBMClassifier:
+def get_registered_model(model_type: str, model_registry_name: str, version: str = "latest") -> LGBMClassifier:
     """Get registered model from MLFlow
 
     Args:
@@ -653,9 +685,7 @@ def plot_feature_importance(X_train: pd.DataFrame, model: LGBMClassifier) -> plt
     return fig
 
 
-def plot_loss_curve(
-    train_loss: list[float], valid_loss: list[float], model_type: str
-) -> plt.figure:
+def plot_loss_curve(train_loss: list[float], valid_loss: list[float], model_type: str) -> plt.figure:
     """Build a training-vs-validation loss curve figure.
 
     Args:
@@ -700,15 +730,11 @@ def plot_calibration_curve(y_true: np.ndarray, y_pred_proba: np.ndarray) -> plt.
         elif y_pred_proba.shape[1] == 1:
             y_pred_proba = y_pred_proba.ravel()
         else:
-            raise ValueError(
-                "y_pred_proba must be 1D or 2D with 1 or 2 columns for binary calibration."
-            )
+            raise ValueError("y_pred_proba must be 1D or 2D with 1 or 2 columns for binary calibration.")
     else:
         y_pred_proba = y_pred_proba.ravel()
 
-    prob_true, prob_pred = calibration_curve(
-        y_true, y_pred_proba, n_bins=10, strategy="uniform"
-    )
+    prob_true, prob_pred = calibration_curve(y_true, y_pred_proba, n_bins=10, strategy="uniform")
 
     # Plot
     plt.ioff()
@@ -762,9 +788,7 @@ def fetch_categorical_mapping_by_run_id(run_id: str) -> dict[str, list]:
     try:
         mapping = json.loads(mapping_raw)
     except json.JSONDecodeError as exc:
-        raise ValueError(
-            f"Invalid categorical_mapping JSON for run_id={run_id}."
-        ) from exc
+        raise ValueError(f"Invalid categorical_mapping JSON for run_id={run_id}.") from exc
     if not isinstance(mapping, dict):
         raise ValueError(f"categorical_mapping tag is not a dict for run_id={run_id}.")
     return mapping
@@ -798,9 +822,7 @@ def download_model_artifacts_from_registry_by_alias(
     return model
 
 
-def fetch_fitted_column_transformer_by_run_id(
-    run_id: str, artifact_name: str = "fitted_column_transformer"
-):
+def fetch_fitted_column_transformer_by_run_id(run_id: str, artifact_name: str = "fitted_column_transformer"):
     """
     Fetch fitted ColumnTransformer pickle artifact from an MLflow run.
 
@@ -834,9 +856,7 @@ def fetch_inference_bundle(
     """
     resolved_metadata_run_id = metadata_run_id or model_run_id
     if resolved_metadata_run_id is None:
-        raise ValueError(
-            "metadata_run_id is required when model_run_id is not provided."
-        )
+        raise ValueError("metadata_run_id is required when model_run_id is not provided.")
 
     model = fetch_model(lightgbm_model_name, alias="production")
     fitted_column_transformer = fetch_fitted_column_transformer_by_run_id(
@@ -846,9 +866,7 @@ def fetch_inference_bundle(
     best_params, selected_features = get_best_params_and_features_from_parent_run_id(
         parent_run_id=resolved_metadata_run_id
     )
-    categorical_mapping = fetch_categorical_mapping_by_run_id(
-        run_id=resolved_metadata_run_id
-    )
+    categorical_mapping = fetch_categorical_mapping_by_run_id(run_id=resolved_metadata_run_id)
 
     return {
         "model": model,
@@ -887,14 +905,8 @@ def load_inference_bundle_from_local_artifacts(
     selected_features_path = os.path.join(artifact_dir, "selected_features.json")
     categorical_mapping_path = os.path.join(artifact_dir, "categorical_mapping.json")
 
-    resolved_params_path = (
-        params_path if os.path.exists(params_path) else best_params_path
-    )
-    resolved_best_features_path = (
-        best_features_path
-        if os.path.exists(best_features_path)
-        else selected_features_path
-    )
+    resolved_params_path = params_path if os.path.exists(params_path) else best_params_path
+    resolved_best_features_path = best_features_path if os.path.exists(best_features_path) else selected_features_path
 
     required_paths = [
         model_dir,
@@ -925,9 +937,7 @@ def load_inference_bundle_from_local_artifacts(
         params = json.load(params_file)
     with open(resolved_best_features_path, "r", encoding="utf-8") as best_features_file:
         best_features = np.array(json.load(best_features_file))
-    with open(
-        categorical_mapping_path, "r", encoding="utf-8"
-    ) as categorical_mapping_file:
+    with open(categorical_mapping_path, "r", encoding="utf-8") as categorical_mapping_file:
         categorical_mapping = json.load(categorical_mapping_file)
 
     return {
@@ -961,9 +971,7 @@ def safe_production_transform(X_new, fitted_features_list):
     return X_out
 
 
-def apply_saved_categorical_mapping(
-    X_pd: pd.DataFrame, categorical_mapping: dict[str, list] | None
-) -> pd.DataFrame:
+def apply_saved_categorical_mapping(X_pd: pd.DataFrame, categorical_mapping: dict[str, list] | None) -> pd.DataFrame:
     """Apply saved training categorical mapping for production-safe inference."""
     if not categorical_mapping:
         return X_pd
@@ -995,20 +1003,14 @@ def prepare_inference_frame(
     5. Feature selection
     6. Saved categorical mapping
     """
-    transformer = (
-        row_wise_transformations
-        if row_wise_transformations is not None
-        else RowWiseTransformations()
-    )
+    transformer = row_wise_transformations if row_wise_transformations is not None else RowWiseTransformations()
     X_out = transformer.apply_row_wise_transformations(X_pd.copy())
 
     if row_wise_features:
         X_out = safe_production_transform(X_out, row_wise_features)
 
     if column_transformer is not None:
-        transformed = column_transformer.transform(
-            X_out, feature_nodes=column_wise_features
-        )
+        transformed = column_transformer.transform(X_out, feature_nodes=column_wise_features)
         if isinstance(transformed, pd.DataFrame):
             X_out = transformed
         else:

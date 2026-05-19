@@ -69,20 +69,14 @@ class InferenceFrameService:
         Returns:
             pd.DataFrame: Model-ready inference frame.
         """
-        transformer = (
-            row_wise_transformations
-            if row_wise_transformations is not None
-            else RowWiseTransformations()
-        )
+        transformer = row_wise_transformations if row_wise_transformations is not None else RowWiseTransformations()
         X_out = transformer.apply_row_wise_transformations(X_pd.copy())
 
         if row_wise_features:
             X_out = safe_production_transform(X_out, row_wise_features)
 
         if column_transformer is not None:
-            transformed = column_transformer.transform(
-                X_out, feature_nodes=column_wise_features
-            )
+            transformed = column_transformer.transform(X_out, feature_nodes=column_wise_features)
             if isinstance(transformed, pd.DataFrame):
                 X_out = transformed
             else:
@@ -93,10 +87,7 @@ class InferenceFrameService:
             for idx, node in enumerate(row_wise_features):
                 legacy_name = f"autoFE_f_{idx}"
                 formula_name = tree_to_formula(node)
-                if (
-                    legacy_name not in X_alias.columns
-                    and formula_name in X_alias.columns
-                ):
+                if legacy_name not in X_alias.columns and formula_name in X_alias.columns:
                     X_alias[legacy_name] = X_alias[formula_name]
             X_out = X_alias
 

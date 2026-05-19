@@ -1,8 +1,9 @@
 from abc import ABC, abstractmethod
-import pandas as pd
+from typing import Any, Dict, Optional
+
 import numpy as np
 import optuna
-from typing import Tuple, Dict, Any, Optional
+import pandas as pd
 
 
 class BaseModelWrapper(ABC):
