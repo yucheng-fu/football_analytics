@@ -10,7 +10,7 @@ The project currently contains the following analyses:
 | Analysis | Description | Notebook | Blog |
 |----------|-------------|----------|------|
 | **01 — Event & xG Analysis** | Events, xG and possession pattern analysis using StatsBomb data | [📓 Notebook](https://github.com/yucheng-fu/football_analytics/blob/main/src/01-analysis/01-analysis.ipynb) | [📝 Blog](https://yucheng-fu.github.io/blog/2025/wc2018-part1/) |
-| **02 — Pass Difficulty Modeling** | Gradient-boosted models for quantifying pass difficulty | [📓 Notebook](https://github.com/yucheng-fu/football_analytics/blob/main/src/02-analysis/02-analysis.ipynb) | TBD |
+| **02 — Pass Difficulty Modelling** | Gradient-boosted models for quantifying pass difficulty | [📓 Notebook](https://github.com/yucheng-fu/football_analytics/blob/main/src/02-analysis/02-analysis.ipynb) | TBD |
 
 
 You can also check out the interactive pass classifier [here](https://yucheng-fu.github.io/football-analytics/).
