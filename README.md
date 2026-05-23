@@ -13,7 +13,7 @@ The project currently contains the following analyses:
 | **02 — Pass Difficulty Modeling** | Gradient-boosted models for quantifying pass difficulty | [📓 Notebook](https://github.com/yucheng-fu/football_analytics/blob/main/src/02-analysis/02-analysis.ipynb) | TBD |
 
 
-You can also check out my interactive pass classifier [here](https://yucheng-fu.github.io/football-analytics/).
+You can also check out the interactive pass classifier [here](https://yucheng-fu.github.io/football-analytics/).
 
 ## 💃 Installation 
 Clone the repository:
