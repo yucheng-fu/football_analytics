@@ -857,8 +857,8 @@ def plot_experiment_metric_comparison(
         # Add the extracted model shift shift directly to the clean integer x-ticks
         shift = model_shifts.get(model, 0.0)
         x_vals = [
-            label_to_x[l] + shift
-            for l in model_df["experiment_label"].astype(str).tolist()
+            label_to_x[exp_label] + shift
+            for exp_label in model_df["experiment_label"].astype(str).tolist()
         ]
 
         y_vals = model_df["mean"].to_numpy()
