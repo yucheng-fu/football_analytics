@@ -47,5 +47,17 @@ ruff check . --select I --fix
 ruff format .
 ```
 
-### Tech stack
-- ML: 
+## Tech stack
+**Backend:** Python, FastAPI, Docker
+
+**Frontend:** TypeScript, HTML, CSS
+
+**Machine Learning:** Scikit-learn, LightGBM, XGBoost, CatBoost
+
+**MLOps & CI/CD**: MLFlow,  Github Actions
+
+**Data wrangling:** Polars, Pandas, NumPy
+
+**Optimsisation & Feature engineering:** Optuna, OpenFE
+
+**Deployment:** HuggingFace Spaces
