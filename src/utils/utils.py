@@ -64,7 +64,9 @@ def build_cmap(x: Tuple[int, int, int], y: Tuple[int, int, int]) -> ListedColorm
     return ListedColormap(newcolors)
 
 
-def invert_orientation(x: np.array, y: np.array, PITCH_X: int, PITCH_Y: int) -> Tuple[np.array, np.array]:
+def invert_orientation(
+    x: np.array, y: np.array, PITCH_X: int, PITCH_Y: int
+) -> Tuple[np.array, np.array]:
     """Invert the orientation of the pitch coordinates.
 
     Args:
@@ -123,7 +125,8 @@ def add_legend(
         ]
     else:
         legend_elements = [
-            Patch(facecolor=colors[i], edgecolor="black", alpha=0.5, label=labels[i]) for i in range(num_elements)
+            Patch(facecolor=colors[i], edgecolor="black", alpha=0.5, label=labels[i])
+            for i in range(num_elements)
         ]
     ax.legend(handles=legend_elements, loc="upper right")
 
@@ -140,7 +143,9 @@ def plot_player_positions(
     fig_name: str,
 ) -> None:
     # Plot player positions
-    pitch.scatter(x, y, s=300, c=color, edgecolors="black", linewidth=1.5, ax=ax, zorder=3)
+    pitch.scatter(
+        x, y, s=300, c=color, edgecolors="black", linewidth=1.5, ax=ax, zorder=3
+    )
 
     # Add jersey numbers and player names
     for xi, yi, num, name in zip(x, y, jerseys, names):
@@ -302,7 +307,9 @@ def plot_passes_by_predicted_probability(
     plt.show()
 
 
-def plot_gmm_components(gmm: GaussianMixture, ax: Axes, color: str, fig_name: str) -> None:
+def plot_gmm_components(
+    gmm: GaussianMixture, ax: Axes, color: str, fig_name: str
+) -> None:
     """Plot GMM components as ellipses on the pitch.
 
     Args:
@@ -353,13 +360,17 @@ def evaluate_and_plot_gmm_pdf(
 
     grid_points = np.column_stack([xx.ravel(), yy.ravel()])
 
-    for i, (mean, covariance, weight) in enumerate(zip(gmm.means_, gmm.covariances_, gmm.weights_)):
+    for i, (mean, covariance, weight) in enumerate(
+        zip(gmm.means_, gmm.covariances_, gmm.weights_)
+    ):
         pdf_values = multivariate_normal.pdf(grid_points, mean=mean, cov=covariance)
         density_components[:, :, i] = weight * pdf_values.reshape(xx.shape)
 
     total_density = density_components.sum(axis=-1)
 
-    ax.contourf(xx, yy, total_density, levels=10, cmap=cmap, alpha=0.8, antialiased=True)
+    ax.contourf(
+        xx, yy, total_density, levels=10, cmap=cmap, alpha=0.8, antialiased=True
+    )
     plt.title("GMM Probability Density Function (PDF) for possession-related events")
     plt.savefig(fig_name, dpi=300, bbox_inches="tight")
     plt.show()
@@ -374,14 +385,20 @@ def split_train_test(passes_df: pl.DataFrame) -> tuple[pl.DataFrame, pl.DataFram
     Returns:
         tuple[pl.DataFrame, pl.DataFrame]: Train and test DataFrames
     """
-    train_df = passes_df.filter(pl.col("match_id") != france_argentina_match_id).drop(pl.col("match_id"))
+    train_df = passes_df.filter(pl.col("match_id") != france_argentina_match_id).drop(
+        pl.col("match_id")
+    )
 
-    test_df = passes_df.filter(pl.col("match_id") == france_argentina_match_id).drop(pl.col("match_id"))
+    test_df = passes_df.filter(pl.col("match_id") == france_argentina_match_id).drop(
+        pl.col("match_id")
+    )
 
     return train_df, test_df
 
 
-def plot_correlations(train_df: pl.DataFrame, numerical_cols: List[str], fig_name: str) -> None:
+def plot_correlations(
+    train_df: pl.DataFrame, numerical_cols: List[str], fig_name: str
+) -> None:
     """Plot correlation plot for continuous features
 
     Args:
@@ -414,7 +431,9 @@ def plot_numerical_feature_distributions(
     ax = ax.ravel()
 
     for i, column in enumerate(numerical_cols):
-        sns.histplot(train_df.select(column).to_series(), bins="auto", kde=True, ax=ax[i])
+        sns.histplot(
+            train_df.select(column).to_series(), bins="auto", kde=True, ax=ax[i]
+        )
         ax[i].set_title(f"Distribution of {column}")
         ax[i].set_xlabel(column)
         ax[i].set_ylabel("Frequency")
@@ -422,7 +441,9 @@ def plot_numerical_feature_distributions(
     plt.show()
 
 
-def plot_categorical_feature_distributions(train_df: pl.DataFrame, categorical_cols: List[str], fig_name: str) -> None:
+def plot_categorical_feature_distributions(
+    train_df: pl.DataFrame, categorical_cols: List[str], fig_name: str
+) -> None:
     """Plot categorical feature distributions
 
     Args:
@@ -448,7 +469,9 @@ def plot_categorical_feature_distributions(train_df: pl.DataFrame, categorical_c
     plt.show()
 
 
-def plot_single_feature_distribution(train_df: pl.DataFrame, col: str, bins: int | str = 30, kde: bool = True) -> None:
+def plot_single_feature_distribution(
+    train_df: pl.DataFrame, col: str, bins: int | str = 30, kde: bool = True
+) -> None:
     """Plot single feature distribution plot
 
     Args:
@@ -477,7 +500,9 @@ def plot_mutual_information(
         y_train (pl.DataFrame): Training labels
         discrete_features (List[bool] | str, optional): How to handle discrete features. Defaults to "auto".
     """
-    mi = mutual_info_classif(X_train, y_train, discrete_features=discrete_features, random_state=165)
+    mi = mutual_info_classif(
+        X_train, y_train, discrete_features=discrete_features, random_state=165
+    )
 
     mi_df = pl.DataFrame({"Feature": X_train.columns, "Mutual Information": mi})
     mi_df = mi_df.sort(by="Mutual Information", descending=True)
@@ -491,7 +516,512 @@ def plot_mutual_information(
     plt.show()
 
 
-def get_parent_run_id_from_experiment(result: OuterCVResults | None, experiment_id: str) -> str:
+def parse_bool_tag(value: Any) -> bool:
+    """Parse an MLflow-style boolean tag value.
+
+    Args:
+        value (Any): Raw value from a tag column.
+
+    Returns:
+        bool: Parsed boolean value.
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() == "true"
+    return bool(value)
+
+
+def get_experiment_config_to_label_map() -> dict[tuple[bool, str, bool, bool], str]:
+    """Return mapping from tag configuration to experiment label.
+
+    Returns:
+        dict[tuple[bool, str, bool, bool], str]: Mapping from
+            ``(feature_engineering, categorical_handling, openfe, hyperparameter_tuning)``
+            to canonical label.
+    """
+    return {
+        (False, "native", False, False): "Baseline",
+        (True, "native", False, False): "FE+Cat",
+        (True, "OHE", False, False): "FE+OHE",
+        (True, "native", True, False): "FE+Cat+OFE",
+        (True, "native", True, True): "FE+Cat+OFE+HP",
+    }
+
+
+def resolve_training_time_seconds_column(df: pl.DataFrame) -> pl.Series:
+    """Resolve per-run training time in seconds from available columns.
+
+    Priority order:
+    1. ``execution_time_sec``
+    2. ``exeuction_time_sec`` (legacy typo)
+    3. ``end_time - start_time`` (computed)
+
+    Args:
+        df (pl.DataFrame): Runs dataframe.
+
+    Returns:
+        pl.Series: Training time in seconds aligned to ``df`` rows.
+    """
+    if "execution_time_sec" in df.columns:
+        return df["execution_time_sec"].cast(pl.Float64, strict=False)
+    if "exeuction_time_sec" in df.columns:
+        return df["exeuction_time_sec"].cast(pl.Float64, strict=False)
+    if "start_time" in df.columns and "end_time" in df.columns:
+        start_ts = (
+            df["start_time"].cast(pl.Utf8).str.strptime(pl.Datetime, strict=False)
+        )
+        end_ts = df["end_time"].cast(pl.Utf8).str.strptime(pl.Datetime, strict=False)
+        return (end_ts - start_ts).dt.total_seconds().cast(pl.Float64)
+    return pl.Series("training_time_sec", [None] * df.height, dtype=pl.Float64)
+
+
+def prepare_tagged_experiment_runs(
+    runs_df: pl.DataFrame,
+    labels: list[str],
+    model_col: str = "tags.model_type",
+) -> pl.DataFrame:
+    """Prepare sub-run dataframe with canonical experiment labels and training time.
+
+    Args:
+        runs_df (pl.DataFrame): MLflow runs table.
+        labels (list[str]): Ordered labels for experiment groups.
+        model_col (str, optional): Model-tag column. Defaults to ``tags.model_type``.
+
+    Returns:
+        pl.DataFrame: Tagged sub-run dataframe with
+            ``experiment_label``, ``openfe_effective``, and
+            ``training_time_sec`` columns.
+    """
+    df = runs_df
+
+    required_cols = [
+        "tags.feature_engineering",
+        "tags.categorical_handling",
+        "tags.openfe",
+        "tags.hyperparameter_tuning",
+        "tags.mlflow.parentRunId",
+        "tags.selected_features",
+        model_col,
+    ]
+    missing = [col for col in required_cols if col not in df.columns]
+    if missing:
+        raise ValueError(f"runs_df is missing required columns: {missing}")
+
+    df = (
+        df.filter(pl.col("tags.mlflow.parentRunId").is_not_null())
+        .with_columns(
+            [
+                pl.col("tags.feature_engineering")
+                .cast(pl.Utf8)
+                .str.to_lowercase()
+                .eq("true")
+                .fill_null(False)
+                .alias("tags.feature_engineering"),
+                pl.col("tags.openfe")
+                .cast(pl.Utf8)
+                .str.to_lowercase()
+                .eq("true")
+                .fill_null(False)
+                .alias("tags.openfe"),
+                pl.col("tags.hyperparameter_tuning")
+                .cast(pl.Utf8)
+                .str.to_lowercase()
+                .eq("true")
+                .fill_null(False)
+                .alias("tags.hyperparameter_tuning"),
+                pl.col("tags.categorical_handling")
+                .cast(pl.Utf8)
+                .alias("tags.categorical_handling"),
+                pl.col("tags.selected_features")
+                .fill_null("")
+                .cast(pl.Utf8)
+                .alias("tags.selected_features"),
+            ]
+        )
+        .with_columns(
+            (
+                pl.col("tags.openfe")
+                | pl.col("tags.selected_features")
+                .str.contains("ofe_col_", literal=True)
+                .fill_null(False)
+            ).alias("openfe_effective")
+        )
+    )
+
+    df = df.with_columns(
+        resolve_training_time_seconds_column(df).alias("training_time_sec")
+    )
+    df = df.filter(pl.col(model_col).is_not_null())
+
+    config_map = get_experiment_config_to_label_map()
+    # Build mapping keys as lowercased string components so they match
+    # the `_experiment_key` we construct from run tags (which we also
+    # lower-case). Booleans are represented as 'true'/'false'.
+    config_key_to_label = {
+        f"{str(k[0]).lower()}|{str(k[1]).lower()}|{str(k[2]).lower()}|{str(k[3]).lower()}": v
+        for k, v in config_map.items()
+    }
+
+    df = df.with_columns(
+        pl.concat_str(
+            [
+                pl.col("tags.feature_engineering").cast(pl.Utf8).str.to_lowercase(),
+                pl.col("tags.categorical_handling").cast(pl.Utf8).str.to_lowercase(),
+                pl.col("openfe_effective").cast(pl.Utf8).str.to_lowercase(),
+                pl.col("tags.hyperparameter_tuning").cast(pl.Utf8).str.to_lowercase(),
+            ],
+            separator="|",
+        ).alias("_experiment_key")
+    )
+    df = df.with_columns(
+        pl.col("_experiment_key")
+        .replace(config_key_to_label, default=None)
+        .alias("experiment_label")
+    )
+    df = df.filter(pl.col("experiment_label").is_not_null())
+
+    label_order = {label: idx for idx, label in enumerate(labels)}
+    df = df.with_columns(
+        pl.col("experiment_label")
+        .replace(label_order, default=999)
+        .alias("_experiment_order")
+    )
+    # Keep _experiment_order so downstream aggregation/plotting can
+    # preserve the user-provided ordering in `x_labels`.
+    df = df.sort(["_experiment_order", model_col]).drop(["_experiment_key"])
+    return df
+
+
+def aggregate_experiment_metric(
+    prepared_runs_df: pl.DataFrame,
+    metric_col: str = "metrics.log_loss",
+    model_col: str = "tags.model_type",
+) -> pl.DataFrame:
+    """Aggregate a metric by model and experiment label.
+
+    Args:
+        prepared_runs_df (pl.DataFrame): Output from
+            ``prepare_tagged_experiment_runs``.
+        metric_col (str, optional): Metric column to aggregate.
+            Defaults to ``metrics.log_loss``.
+        model_col (str, optional): Model tag column.
+            Defaults to ``tags.model_type``.
+
+    Returns:
+        pl.DataFrame: Aggregated dataframe with ``mean``, ``std``, and ``count``.
+    """
+    df = (
+        prepared_runs_df.with_columns(
+            pl.col(metric_col).cast(pl.Float64, strict=False).alias(metric_col)
+        )
+        .filter(pl.col(metric_col).is_not_null())
+        .filter(pl.col(model_col).is_not_null())
+    )
+    # Include the experiment order (first seen) so we can sort by the
+    # original label ordering instead of lexicographic label sorting.
+    agg_df = (
+        df.group_by([model_col, "experiment_label"])
+        .agg(
+            [
+                pl.col(metric_col).mean().alias("mean"),
+                pl.col(metric_col).std().alias("std"),
+                pl.col(metric_col).count().alias("count"),
+                pl.first("_experiment_order").alias("_experiment_order"),
+            ]
+        )
+        .sort(["_experiment_order", model_col])
+    )
+    return agg_df
+
+
+def plot_experiment_metric_comparison(
+    agg_df: pl.DataFrame,
+    fig_name: str,
+    raw_df: pl.DataFrame | None = None,
+    y_label: str | None = None,
+    metric_col: str = "metrics.log_loss",
+    model_col: str = "tags.model_type",
+    show_points: bool = True,
+    title: str = "Model Performance Across Tagged Experiments",
+) -> None:
+    """Plot aggregated metric comparison across experiments and models."""
+    import matplotlib.pyplot as plt
+    import numpy as np
+    import pandas as pd
+    import seaborn as sns
+
+    agg_pd = agg_df.to_pandas()
+    raw_pd = raw_df.to_pandas() if raw_df is not None else None
+
+    # Handle experiment ordering
+    if "_experiment_order" in agg_pd.columns:
+        order_df = (
+            agg_pd[["experiment_label", "_experiment_order"]]
+            .drop_duplicates()
+            .sort_values("_experiment_order")
+        )
+        ordered_labels = order_df["experiment_label"].tolist()
+        agg_pd["experiment_label"] = pd.Categorical(
+            agg_pd["experiment_label"], categories=ordered_labels, ordered=True
+        )
+        if raw_pd is not None and "experiment_label" in raw_pd.columns:
+            raw_pd["experiment_label"] = pd.Categorical(
+                raw_pd["experiment_label"], categories=ordered_labels, ordered=True
+            )
+    else:
+        ordered_labels = sorted(agg_pd["experiment_label"].unique().tolist())
+
+    hue_order = [model for model in agg_pd[model_col].dropna().unique().tolist()]
+
+    # Preferred brand colours for models
+    custom_colors = {
+        "catboost": "#FF6B2D",
+        "xgboost": "#3F8AD4",
+        "lightgbm": "#00B159",
+    }
+
+    palette = {}
+    for model in hue_order:
+        ml = str(model).lower()
+        if "catboost" in ml or ml.startswith("cat"):
+            palette[model] = custom_colors["catboost"]
+        elif "xgboost" in ml or "xg" in ml:
+            palette[model] = custom_colors["xgboost"]
+        elif "lightgbm" in ml or "lgbm" in ml or "light" in ml:
+            palette[model] = custom_colors["lightgbm"]
+        else:
+            palette[model] = "#7F7F7F"
+
+    plt.figure(figsize=(12, 6))
+    ax = plt.gca()
+
+    # 1. Plot the raw scatter points FIRST if available
+    # We let Seaborn draw the underlying categories and handle the dodging layout natively
+    if show_points and raw_pd is not None:
+        stripplot = sns.stripplot(
+            data=raw_pd,
+            x="experiment_label",
+            y=metric_col,
+            hue=model_col,
+            hue_order=hue_order,
+            palette=palette,
+            dodge=True,
+            alpha=0.35,
+            size=4,
+            legend=True,  # Let stripplot build the initial clean legend layout
+            ax=ax,
+            zorder=2,
+        )
+
+        # --- THE MAGIC TRICK ---
+        # Seaborn saves the exact dodged X positions inside the collections object.
+        # We retrieve these shifted offsets to precisely center the errorbars.
+        try:
+            # Group positions dynamically by model index
+            collection_paths = stripplot.collections
+            n_experiments = len(ordered_labels)
+
+            # Each model group gets its own unique offset array
+            offsets = [
+                collection_paths[i].get_offsets()[:, 0][::n_experiments]
+                for i in range(len(hue_order))
+            ]
+            # Average the deviations across categories to get a stable offset shift per model
+            model_shifts = {
+                model: np.mean(offsets[i] - np.round(offsets[i]))
+                for i, model in enumerate(hue_order)
+            }
+        except Exception:
+            # Safe programmatic fallback fallback if formatting variations mismatch collections
+            total_models = len(hue_order)
+            dodge_width = 0.4
+            shifts = np.linspace(-dodge_width / 2, dodge_width / 2, total_models)
+            model_shifts = dict(zip(hue_order, shifts))
+
+    else:
+        # Fallback math manual dodge offsets if show_points=False
+        total_models = len(hue_order)
+        dodge_width = 0.4
+        shifts = np.linspace(-dodge_width / 2, dodge_width / 2, total_models)
+        model_shifts = dict(zip(hue_order, shifts))
+
+    label_to_x = {lab: i for i, lab in enumerate(ordered_labels)}
+
+    # 2. Overlay the mean and 95% CI error bars directly onto the dodged tracks
+    for model in hue_order:
+        model_df = agg_pd[agg_pd[model_col] == model].copy()
+        if model_df.empty:
+            continue
+
+        # Add the extracted model shift shift directly to the clean integer x-ticks
+        shift = model_shifts.get(model, 0.0)
+        x_vals = [
+            label_to_x[exp_label] + shift
+            for exp_label in model_df["experiment_label"].astype(str).tolist()
+        ]
+
+        y_vals = model_df["mean"].to_numpy()
+        y_err = (1.96 * model_df["std"].fillna(0)).to_numpy()
+
+        ax.errorbar(
+            x_vals,
+            y_vals,
+            yerr=y_err,
+            color=palette.get(model),
+            marker="o",
+            linestyle="None",
+            markeredgecolor="black",
+            markeredgewidth=1.2,
+            markersize=8,  # Made slightly larger so it completely commands the cluster center
+            capsize=5,
+            zorder=5,  # Keeps the mean cleanly elevated on top of the individual run dots
+        )
+
+    # Configure axes layout formatting
+    ax.set_xticks(list(label_to_x.values()))
+    ax.set_xticklabels(list(label_to_x.keys()))
+
+    # Tidy up cleanly duplicate/merged labels in legend entries
+    handles, labels = ax.get_legend_handles_labels()
+    by_label = dict(zip(labels, handles))
+    ax.legend(by_label.values(), by_label.keys(), title="Model Type", loc="upper right")
+
+    plot_y_label = (
+        y_label
+        if y_label is not None
+        else metric_col.replace("metrics.", "").replace("_", " ").title()
+    )
+
+    plt.xlabel("Experiment", labelpad=10)
+    plt.ylabel(plot_y_label)
+    plt.title(title, pad=15)
+    plt.grid(
+        axis="y", linestyle="--", alpha=0.5
+    )  # Horizontal ticks are cleaner for metric variations
+    plt.tight_layout()
+    plt.savefig(fig_name, dpi=300, bbox_inches="tight")
+    plt.show()
+
+
+def plot_model_performance_across_tagged_experiments(
+    runs_df: pl.DataFrame,
+    x_labels: list[str],
+    metric_col: str = "metrics.log_loss",
+    model_col: str = "tags.model_type",
+    show_points: bool = True,
+) -> pl.DataFrame:
+    """Prepare, aggregate, and plot model performance across experiments.
+
+    Args:
+        runs_df (pl.DataFrame): Runs dataframe.
+        x_labels (list[str]): Ordered experiment labels.
+        metric_col (str, optional): Metric column to aggregate and plot.
+            Defaults to ``metrics.log_loss``.
+        model_col (str, optional): Model tag column.
+            Defaults to ``tags.model_type``.
+        show_points (bool, optional): Overlay per-run points if True.
+            Defaults to True.
+
+    Returns:
+        pl.DataFrame: Aggregated dataframe with ``mean``, ``std``, and ``count``.
+    """
+    prepared_df = prepare_tagged_experiment_runs(
+        runs_df=runs_df, labels=x_labels, model_col=model_col
+    )
+    agg_df = aggregate_experiment_metric(
+        prepared_runs_df=prepared_df, metric_col=metric_col, model_col=model_col
+    )
+    plot_experiment_metric_comparison(
+        agg_df=agg_df,
+        fig_name="../../figures/analysis-02/model_performance.png",
+        raw_df=prepared_df,
+        metric_col=metric_col,
+        model_col=model_col,
+        show_points=show_points,
+        title="Model Performance Across Tagged Experiments",
+    )
+    return agg_df
+
+
+def plot_log_training_time_across_tagged_experiments(
+    runs_df: pl.DataFrame,
+    x_labels: list[str],
+    model_col: str = "tags.model_type",
+    show_points: bool = True,
+) -> pl.DataFrame:
+    """Plot log training time across experiments and return aggregation.
+
+    Args:
+        runs_df (pl.DataFrame): Runs dataframe.
+        x_labels (list[str]): Ordered experiment labels.
+        model_col (str, optional): Model tag column.
+            Defaults to ``tags.model_type``.
+        show_points (bool, optional): Overlay per-run points if True.
+            Defaults to True.
+
+    Returns:
+        pl.DataFrame: Aggregated dataframe of ``log_training_time`` with
+            ``mean``, ``std``, and ``count``.
+    """
+    prepared_df = prepare_tagged_experiment_runs(
+        runs_df=runs_df, labels=x_labels, model_col=model_col
+    )
+    prepared_df = prepared_df.filter(pl.col("training_time_sec") > 0).with_columns(
+        pl.col("training_time_sec").log().alias("log_training_time")
+    )
+    agg_df = aggregate_experiment_metric(
+        prepared_runs_df=prepared_df,
+        metric_col="log_training_time",
+        model_col=model_col,
+    )
+    plot_experiment_metric_comparison(
+        agg_df=agg_df,
+        fig_name="../../figures/analysis-02/training_time.png",
+        raw_df=prepared_df,
+        y_label="Log Training Time (seconds)",
+        metric_col="log_training_time",
+        model_col=model_col,
+        show_points=show_points,
+        title="Log Training Time Across Tagged Experiments",
+    )
+    return agg_df
+
+
+def fetch_experiment_runs(experiment_name: str) -> pl.DataFrame:
+    """
+    Fetch all runs from an MLflow experiment.
+
+    Args:
+        experiment_name (str): Name of the MLflow experiment.
+
+    Returns:
+        pd.DataFrame: DataFrame containing all runs.
+    """
+    mlflow.set_tracking_uri(tracking_uri)
+    client = MlflowClient(tracking_uri=tracking_uri)
+
+    # Get experiment by name
+    experiment = client.get_experiment_by_name(experiment_name)
+
+    if experiment is None:
+        raise ValueError(f"Experiment '{experiment_name}' not found")
+
+    # Fetch all runs
+    runs_df = mlflow.search_runs(
+        experiment_ids=[experiment.experiment_id],
+        output_format="pandas",
+        max_results=1000,
+    )
+
+    runs = pl.from_pandas(runs_df)
+
+    return runs
+
+
+def get_parent_run_id_from_experiment(
+    result: OuterCVResults | None, experiment_id: str
+) -> str:
     """Get parent run ID from experiment
 
     Args:
@@ -512,12 +1042,16 @@ def get_parent_run_id_from_experiment(result: OuterCVResults | None, experiment_
             order_by=["attributes.start_time DESC"],
         )
 
-        parent_run_id = next(run.info.run_id for run in runs if "mlflow.parentRunId" not in run.data.tags)
+        parent_run_id = next(
+            run.info.run_id for run in runs if "mlflow.parentRunId" not in run.data.tags
+        )
 
     return parent_run_id
 
 
-def compute_generalisation_error_from_run_id_and_experiment_id(parent_run_id: str, experiment_id: str) -> None:
+def compute_generalisation_error_from_run_id_and_experiment_id(
+    parent_run_id: str, experiment_id: str
+) -> None:
     """Compute generalisation error from runs
 
     Args:
@@ -538,7 +1072,9 @@ def compute_generalisation_error_from_run_id_and_experiment_id(parent_run_id: st
     std = np.std(loss, ddof=1)
 
     print(f"Number of outer folds: {len(loss)}")
-    print(f"95% confidence interval for best estimate of generalisation: {mean} ± {1.96 * std / np.sqrt(len(loss))}")
+    print(
+        f"95% confidence interval for best estimate of generalisation: {mean} ± {1.96 * std / np.sqrt(len(loss))}"
+    )
 
 
 def get_best_params_and_features_from_parent_run_id(
@@ -560,7 +1096,9 @@ def get_best_params_and_features_from_parent_run_id(
     # Start with all raw_params (all MLflow-logged params, as strings)
     best_params = dict(raw_params)
     # Overwrite with validated/typed LGBMParams values for correct types
-    lgbm_params = LGBMParams(**{k: raw_params[k] for k in LGBMParams.model_fields if k in raw_params})
+    lgbm_params = LGBMParams(
+        **{k: raw_params[k] for k in LGBMParams.model_fields if k in raw_params}
+    )
     best_params.update(lgbm_params.model_dump())
 
     best_features = np.array(parent_run.data.tags["selected_features"].split(","))
@@ -583,7 +1121,9 @@ def resolve_downloaded_pickle_path(local_path: str) -> str:
         if pkl_files:
             return pkl_files[0]
 
-    raise ValueError(f"Could not resolve pickle file from downloaded path: {local_path}")
+    raise ValueError(
+        f"Could not resolve pickle file from downloaded path: {local_path}"
+    )
 
 
 def get_ofe_feature_nodes_from_run_id(
@@ -614,7 +1154,9 @@ def get_ofe_feature_nodes_from_run_id(
     artifact_paths = [item.path for item in artifacts]
 
     if row_artifact_name is None:
-        row_candidates = sorted([p for p in artifact_paths if "row_wise_features" in os.path.basename(p)])
+        row_candidates = sorted(
+            [p for p in artifact_paths if "row_wise_features" in os.path.basename(p)]
+        )
         if not row_candidates:
             raise ValueError(f"No row-wise feature pickle found under run_id={run_id}")
         row_artifact_path = row_candidates[-1]
@@ -622,9 +1164,13 @@ def get_ofe_feature_nodes_from_run_id(
         row_artifact_path = f"pickles/{row_artifact_name}.pkl"
 
     if column_artifact_name is None:
-        column_candidates = sorted([p for p in artifact_paths if "column_wise_features" in os.path.basename(p)])
+        column_candidates = sorted(
+            [p for p in artifact_paths if "column_wise_features" in os.path.basename(p)]
+        )
         if not column_candidates:
-            raise ValueError(f"No column-wise feature pickle found under run_id={run_id}")
+            raise ValueError(
+                f"No column-wise feature pickle found under run_id={run_id}"
+            )
         column_artifact_path = column_candidates[-1]
     else:
         column_artifact_path = f"pickles/{column_artifact_name}.pkl"
@@ -643,7 +1189,9 @@ def get_ofe_feature_nodes_from_run_id(
     return row_wise_features, column_wise_features
 
 
-def get_registered_model(model_type: str, model_registry_name: str, version: str = "latest") -> LGBMClassifier:
+def get_registered_model(
+    model_type: str, model_registry_name: str, version: str = "latest"
+) -> LGBMClassifier:
     """Get registered model from MLFlow
 
     Args:
@@ -685,7 +1233,9 @@ def plot_feature_importance(X_train: pd.DataFrame, model: LGBMClassifier) -> plt
     return fig
 
 
-def plot_loss_curve(train_loss: list[float], valid_loss: list[float], model_type: str) -> plt.figure:
+def plot_loss_curve(
+    train_loss: list[float], valid_loss: list[float], model_type: str
+) -> plt.figure:
     """Build a training-vs-validation loss curve figure.
 
     Args:
@@ -730,11 +1280,15 @@ def plot_calibration_curve(y_true: np.ndarray, y_pred_proba: np.ndarray) -> plt.
         elif y_pred_proba.shape[1] == 1:
             y_pred_proba = y_pred_proba.ravel()
         else:
-            raise ValueError("y_pred_proba must be 1D or 2D with 1 or 2 columns for binary calibration.")
+            raise ValueError(
+                "y_pred_proba must be 1D or 2D with 1 or 2 columns for binary calibration."
+            )
     else:
         y_pred_proba = y_pred_proba.ravel()
 
-    prob_true, prob_pred = calibration_curve(y_true, y_pred_proba, n_bins=10, strategy="uniform")
+    prob_true, prob_pred = calibration_curve(
+        y_true, y_pred_proba, n_bins=10, strategy="uniform"
+    )
 
     # Plot
     plt.ioff()
@@ -788,7 +1342,9 @@ def fetch_categorical_mapping_by_run_id(run_id: str) -> dict[str, list]:
     try:
         mapping = json.loads(mapping_raw)
     except json.JSONDecodeError as exc:
-        raise ValueError(f"Invalid categorical_mapping JSON for run_id={run_id}.") from exc
+        raise ValueError(
+            f"Invalid categorical_mapping JSON for run_id={run_id}."
+        ) from exc
     if not isinstance(mapping, dict):
         raise ValueError(f"categorical_mapping tag is not a dict for run_id={run_id}.")
     return mapping
@@ -822,7 +1378,9 @@ def download_model_artifacts_from_registry_by_alias(
     return model
 
 
-def fetch_fitted_column_transformer_by_run_id(run_id: str, artifact_name: str = "fitted_column_transformer"):
+def fetch_fitted_column_transformer_by_run_id(
+    run_id: str, artifact_name: str = "fitted_column_transformer"
+):
     """
     Fetch fitted ColumnTransformer pickle artifact from an MLflow run.
 
@@ -856,7 +1414,9 @@ def fetch_inference_bundle(
     """
     resolved_metadata_run_id = metadata_run_id or model_run_id
     if resolved_metadata_run_id is None:
-        raise ValueError("metadata_run_id is required when model_run_id is not provided.")
+        raise ValueError(
+            "metadata_run_id is required when model_run_id is not provided."
+        )
 
     model = fetch_model(lightgbm_model_name, alias="production")
     fitted_column_transformer = fetch_fitted_column_transformer_by_run_id(
@@ -866,7 +1426,9 @@ def fetch_inference_bundle(
     best_params, selected_features = get_best_params_and_features_from_parent_run_id(
         parent_run_id=resolved_metadata_run_id
     )
-    categorical_mapping = fetch_categorical_mapping_by_run_id(run_id=resolved_metadata_run_id)
+    categorical_mapping = fetch_categorical_mapping_by_run_id(
+        run_id=resolved_metadata_run_id
+    )
 
     return {
         "model": model,
@@ -905,8 +1467,14 @@ def load_inference_bundle_from_local_artifacts(
     selected_features_path = os.path.join(artifact_dir, "selected_features.json")
     categorical_mapping_path = os.path.join(artifact_dir, "categorical_mapping.json")
 
-    resolved_params_path = params_path if os.path.exists(params_path) else best_params_path
-    resolved_best_features_path = best_features_path if os.path.exists(best_features_path) else selected_features_path
+    resolved_params_path = (
+        params_path if os.path.exists(params_path) else best_params_path
+    )
+    resolved_best_features_path = (
+        best_features_path
+        if os.path.exists(best_features_path)
+        else selected_features_path
+    )
 
     required_paths = [
         model_dir,
@@ -937,7 +1505,9 @@ def load_inference_bundle_from_local_artifacts(
         params = json.load(params_file)
     with open(resolved_best_features_path, "r", encoding="utf-8") as best_features_file:
         best_features = np.array(json.load(best_features_file))
-    with open(categorical_mapping_path, "r", encoding="utf-8") as categorical_mapping_file:
+    with open(
+        categorical_mapping_path, "r", encoding="utf-8"
+    ) as categorical_mapping_file:
         categorical_mapping = json.load(categorical_mapping_file)
 
     return {
@@ -971,7 +1541,9 @@ def safe_production_transform(X_new, fitted_features_list):
     return X_out
 
 
-def apply_saved_categorical_mapping(X_pd: pd.DataFrame, categorical_mapping: dict[str, list] | None) -> pd.DataFrame:
+def apply_saved_categorical_mapping(
+    X_pd: pd.DataFrame, categorical_mapping: dict[str, list] | None
+) -> pd.DataFrame:
     """Apply saved training categorical mapping for production-safe inference."""
     if not categorical_mapping:
         return X_pd
@@ -1003,14 +1575,20 @@ def prepare_inference_frame(
     5. Feature selection
     6. Saved categorical mapping
     """
-    transformer = row_wise_transformations if row_wise_transformations is not None else RowWiseTransformations()
+    transformer = (
+        row_wise_transformations
+        if row_wise_transformations is not None
+        else RowWiseTransformations()
+    )
     X_out = transformer.apply_row_wise_transformations(X_pd.copy())
 
     if row_wise_features:
         X_out = safe_production_transform(X_out, row_wise_features)
 
     if column_transformer is not None:
-        transformed = column_transformer.transform(X_out, feature_nodes=column_wise_features)
+        transformed = column_transformer.transform(
+            X_out, feature_nodes=column_wise_features
+        )
         if isinstance(transformed, pd.DataFrame):
             X_out = transformed
         else:
