@@ -15,7 +15,7 @@ The project currently contains the following analyses:
 
 You can also check out my interactive pass classifier [here](https://yucheng-fu.github.io/football-analytics/).
 
-## Installation
+## 💃 Installation 
 Clone the repository:
 ```bash
 git clone https://github.com/yucheng-fu/football_analytics.git
@@ -29,7 +29,7 @@ Create virtual environment and install packages
 uv sync
 ```
 
-## Tests, linting and formatting
+## 🔬 Tests, linting and formatting 
 Run all tests
 ```bash
 pytest
@@ -46,8 +46,12 @@ ruff check .
 ruff check . --select I --fix
 ruff format .
 ```
+## 🚀 Deployment
+For deployment of FastAPI backend, see [README](https://github.com/yucheng-fu/football_analytics/blob/main/src/api/README.md)
 
-## Tech stack
+For deployment of frontend, see [README](https://github.com/yucheng-fu/football_analytics/blob/main/frontend/README.md)
+
+## 🛠️ Tech stack 
 **Backend:** Python, FastAPI, Docker
 
 **Frontend:** TypeScript, HTML, CSS
