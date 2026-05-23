@@ -233,6 +233,20 @@ class ModelCVEvaluator:
 
         return params
 
+    def _build_subrun_tags(self, selected_features: Optional[np.ndarray] = None) -> dict[str, str | bool]:
+        """Build standard tags for MLflow sub-runs."""
+        categorical_handling = "OHE" if len(self.ohe_columns) > 0 else "native"
+        tags: dict[str, str | bool] = {
+            "model_type": self.model_type,
+            "feature_engineering": bool(self.use_feature_engineering),
+            "categorical_handling": categorical_handling,
+            "openfe": bool(self.use_ofe),
+            "hyperparameter_tuning": bool(self.use_hyperparameter_tuning),
+        }
+        if selected_features is not None:
+            tags["selected_features"] = ",".join(map(str, selected_features))
+        return tags
+
     def get_best_iteration(
         self,
         model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier],
@@ -322,8 +336,7 @@ class ModelCVEvaluator:
         outer_cv_results.run_ids.append(run.info.run_id)
         outer_cv_results.experiment_ids.append(run.info.experiment_id)
 
-        mlflow.set_tag("selected_features", ",".join(map(str, selected_features)))
-        mlflow.set_tag("model_type", self.model_type)
+        mlflow.set_tags(self._build_subrun_tags(selected_features=selected_features))
         mlflow.log_metric("log_loss", outer_fold_log_loss)
         mlflow.log_params(best_params)
 
@@ -357,6 +370,7 @@ class ModelCVEvaluator:
                 "mlflow.runName": f"Trial_{trial.number}",
                 "status": str(trial.state),
             }
+            tags.update(self._build_subrun_tags())
 
             # Create a nested child run
             trial_run = client.create_run(

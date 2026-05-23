@@ -196,6 +196,16 @@ class ModelTrainer:
                 mapping[col] = X_pd[col].cat.categories.tolist()
         return mapping
 
+    def _build_run_tags(self) -> dict[str, str | bool]:
+        """Build standard tags for final-training runs."""
+        return {
+            "model_type": self.model_type,
+            "feature_engineering": bool(self.row_wise_features or self.column_wise_features),
+            "categorical_handling": "native",
+            "openfe": bool(self.row_wise_features or self.column_wise_features),
+            "hyperparameter_tuning": False,
+        }
+
     def _log_training_run(
         self,
         model: Union[LGBMClassifier, XGBClassifier, CatBoostClassifier],
@@ -219,7 +229,7 @@ class ModelTrainer:
         mlflow.log_params(self.params)
         mlflow.set_tag("features", ",".join(map(str, self.features)))
         mlflow.set_tag("categorical_mapping", json.dumps(categorical_mapping))
-        mlflow.set_tag("model_type", self.model_type)
+        mlflow.set_tags(self._build_run_tags())
         if column_transformer is not None:
             self.mlflow_handler.log_artifact_pickle(column_transformer, "fitted_column_transformer")
         mlflow.log_metric("train_loss", train_log_loss)
