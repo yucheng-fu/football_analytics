@@ -1,16 +1,20 @@
 # Frontend
+This folder contains the code for the frontend components for the interactive pass classifier.
 
-## Run
-1. Install dependencies:
-`npm install`
-2. Start dev server:
-`npm run dev`
-3. Build for production:
-`npm run build`
+## Run locally
+Install dependencies:
+```bash 
+npm install
+```
+Create .env.local file and add the following:
+```
+VITE_PASS_PREDICTION_URL=https://yuch0001-football-api.hf.space/api/v1/inference/predict
+```
 
-## Prediction API Configuration
-Create `frontend/.env.local` and set:
-`VITE_PASS_PREDICTION_URL=https://yuch0001-football-api.hf.space/predict`
-`VITE_PASS_API_KEY=<YOUR_API_KEY>`
+Start dev server:
+```bash
+npm run dev
+```
 
-The frontend sends the request directly to the hosted API.
+## Deploy to production
+Run the Github Actions workflow defined in `.github/workflows/deploy-frontend-pages.yml`
