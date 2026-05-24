@@ -3,7 +3,7 @@ A Python-based football analytics project for analysing the 2018 FIFA World cup 
 
 The project currently contains the following analyses:
 - 01-analysis: Events, xG and possession patterns: An introduction to event-based data in football 
-- 02-analysis: Quantifying quantifying passing difficulty with gradient-boosted tree models: machine learning applied to event data
+- 02-analysis: Quantifying passing difficulty with gradient-boosted tree models: machine learning applied to event data
 
 ## 📊 Analysis Overview
 
