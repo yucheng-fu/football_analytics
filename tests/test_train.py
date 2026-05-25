@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from training.train import ModelTrainer
+from training.trainer import ModelTrainer
 
 
 class _BaseEstimator:
@@ -37,7 +37,9 @@ def _build_trainer():
     trainer.row_wise_features = []
     trainer.column_wise_features = []
     trainer.row_wise_transformations = MagicMock()
-    trainer.row_wise_transformations.apply_row_wise_transformations.side_effect = lambda df: df
+    trainer.row_wise_transformations.apply_row_wise_transformations.side_effect = (
+        lambda df: df
+    )
     trainer.categorical_columns = []
     trainer.run_name = "baseline"
     trainer.experiment_name = "final_models"

@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from training.nested_cv_eval import ModelCVEvaluator
+from training.nested_cv_evaluator import ModelCVEvaluator
 
 
 class LGBMClassifier:
