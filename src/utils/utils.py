@@ -525,12 +525,7 @@ def get_experiment_config_to_label_map() -> dict[tuple[bool, str, bool, bool], s
 
 
 def resolve_training_time_seconds_column(df: pl.DataFrame) -> pl.Series:
-    """Resolve per-run training time in seconds from available columns.
-
-    Priority order:
-    1. ``execution_time_sec``
-    2. ``exeuction_time_sec`` (legacy typo)
-    3. ``end_time - start_time`` (computed)
+    """Resolve per-run training time in seconds from start/end timestamps.
 
     Args:
         df (pl.DataFrame): Runs dataframe.
@@ -538,15 +533,14 @@ def resolve_training_time_seconds_column(df: pl.DataFrame) -> pl.Series:
     Returns:
         pl.Series: Training time in seconds aligned to ``df`` rows.
     """
-    if "execution_time_sec" in df.columns:
-        return df["execution_time_sec"].cast(pl.Float64, strict=False)
-    if "exeuction_time_sec" in df.columns:
-        return df["exeuction_time_sec"].cast(pl.Float64, strict=False)
-    if "start_time" in df.columns and "end_time" in df.columns:
-        start_ts = df["start_time"].cast(pl.Utf8).str.strptime(pl.Datetime, strict=False)
-        end_ts = df["end_time"].cast(pl.Utf8).str.strptime(pl.Datetime, strict=False)
-        return (end_ts - start_ts).dt.total_seconds().cast(pl.Float64)
-    return pl.Series("training_time_sec", [None] * df.height, dtype=pl.Float64)
+    start_ts = df["start_time"].cast(pl.Utf8).str.strptime(pl.Datetime, strict=False)
+    end_ts = df["end_time"].cast(pl.Utf8).str.strptime(pl.Datetime, strict=False)
+    return (end_ts - start_ts).dt.total_seconds().cast(pl.Float64)
+
+
+def parse_bool_tag_expr(col_name: str) -> pl.Expr:
+    """Build expression that parses MLflow-style boolean tag values."""
+    return pl.col(col_name).cast(pl.Utf8).str.to_lowercase().eq("true").fill_null(False)
 
 
 def prepare_tagged_experiment_runs(
@@ -585,19 +579,9 @@ def prepare_tagged_experiment_runs(
         df.filter(pl.col("tags.mlflow.parentRunId").is_not_null())
         .with_columns(
             [
-                pl.col("tags.feature_engineering")
-                .cast(pl.Utf8)
-                .str.to_lowercase()
-                .eq("true")
-                .fill_null(False)
-                .alias("tags.feature_engineering"),
-                pl.col("tags.openfe").cast(pl.Utf8).str.to_lowercase().eq("true").fill_null(False).alias("tags.openfe"),
-                pl.col("tags.hyperparameter_tuning")
-                .cast(pl.Utf8)
-                .str.to_lowercase()
-                .eq("true")
-                .fill_null(False)
-                .alias("tags.hyperparameter_tuning"),
+                parse_bool_tag_expr("tags.feature_engineering").alias("tags.feature_engineering"),
+                parse_bool_tag_expr("tags.openfe").alias("tags.openfe"),
+                parse_bool_tag_expr("tags.hyperparameter_tuning").alias("tags.hyperparameter_tuning"),
                 pl.col("tags.categorical_handling").cast(pl.Utf8).alias("tags.categorical_handling"),
                 pl.col("tags.selected_features").fill_null("").cast(pl.Utf8).alias("tags.selected_features"),
             ]
@@ -614,9 +598,6 @@ def prepare_tagged_experiment_runs(
     df = df.filter(pl.col(model_col).is_not_null())
 
     config_map = get_experiment_config_to_label_map()
-    # Build mapping keys as lowercased string components so they match
-    # the `_experiment_key` we construct from run tags (which we also
-    # lower-case). Booleans are represented as 'true'/'false'.
     config_key_to_label = {
         f"{str(k[0]).lower()}|{str(k[1]).lower()}|{str(k[2]).lower()}|{str(k[3]).lower()}": v
         for k, v in config_map.items()
@@ -638,8 +619,6 @@ def prepare_tagged_experiment_runs(
 
     label_order = {label: idx for idx, label in enumerate(labels)}
     df = df.with_columns(pl.col("experiment_label").replace(label_order, default=999).alias("_experiment_order"))
-    # Keep _experiment_order so downstream aggregation/plotting can
-    # preserve the user-provided ordering in `x_labels`.
     df = df.sort(["_experiment_order", model_col]).drop(["_experiment_key"])
     return df
 
@@ -667,8 +646,6 @@ def aggregate_experiment_metric(
         .filter(pl.col(metric_col).is_not_null())
         .filter(pl.col(model_col).is_not_null())
     )
-    # Include the experiment order (first seen) so we can sort by the
-    # original label ordering instead of lexicographic label sorting.
     agg_df = (
         df.group_by([model_col, "experiment_label"])
         .agg(
@@ -684,6 +661,33 @@ def aggregate_experiment_metric(
     return agg_df
 
 
+def get_model_palette(hue_order: list[str]) -> dict[str, str]:
+    """Map model names to consistent plotting colors."""
+    custom_colors = {
+        "catboost": "#FF6B2D",
+        "xgboost": "#3F8AD4",
+        "lightgbm": "#00B159",
+    }
+    palette = {}
+    for model in hue_order:
+        ml = str(model).lower()
+        if "catboost" in ml or ml.startswith("cat"):
+            palette[model] = custom_colors["catboost"]
+        elif "xgboost" in ml or "xg" in ml:
+            palette[model] = custom_colors["xgboost"]
+        elif "lightgbm" in ml or "lgbm" in ml or "light" in ml:
+            palette[model] = custom_colors["lightgbm"]
+        else:
+            palette[model] = "#7F7F7F"
+    return palette
+
+
+def get_default_model_shifts(hue_order: list[str], dodge_width: float = 0.4) -> dict[str, float]:
+    """Compute evenly spaced dodge offsets for model groups."""
+    shifts = np.linspace(-dodge_width / 2, dodge_width / 2, len(hue_order))
+    return dict(zip(hue_order, shifts))
+
+
 def plot_experiment_metric_comparison(
     agg_df: pl.DataFrame,
     fig_name: str,
@@ -695,15 +699,9 @@ def plot_experiment_metric_comparison(
     title: str = "Model Performance Across Tagged Experiments",
 ) -> None:
     """Plot aggregated metric comparison across experiments and models."""
-    import matplotlib.pyplot as plt
-    import numpy as np
-    import pandas as pd
-    import seaborn as sns
-
     agg_pd = agg_df.to_pandas()
     raw_pd = raw_df.to_pandas() if raw_df is not None else None
 
-    # Handle experiment ordering
     if "_experiment_order" in agg_pd.columns:
         order_df = agg_pd[["experiment_label", "_experiment_order"]].drop_duplicates().sort_values("_experiment_order")
         ordered_labels = order_df["experiment_label"].tolist()
@@ -716,31 +714,12 @@ def plot_experiment_metric_comparison(
         ordered_labels = sorted(agg_pd["experiment_label"].unique().tolist())
 
     hue_order = [model for model in agg_pd[model_col].dropna().unique().tolist()]
-
-    # Preferred brand colours for models
-    custom_colors = {
-        "catboost": "#FF6B2D",
-        "xgboost": "#3F8AD4",
-        "lightgbm": "#00B159",
-    }
-
-    palette = {}
-    for model in hue_order:
-        ml = str(model).lower()
-        if "catboost" in ml or ml.startswith("cat"):
-            palette[model] = custom_colors["catboost"]
-        elif "xgboost" in ml or "xg" in ml:
-            palette[model] = custom_colors["xgboost"]
-        elif "lightgbm" in ml or "lgbm" in ml or "light" in ml:
-            palette[model] = custom_colors["lightgbm"]
-        else:
-            palette[model] = "#7F7F7F"
+    palette = get_model_palette(hue_order)
 
     plt.figure(figsize=(12, 6))
     ax = plt.gca()
 
-    # 1. Plot the raw scatter points FIRST if available
-    # We let Seaborn draw the underlying categories and handle the dodging layout natively
+    model_shifts = get_default_model_shifts(hue_order)
     if show_points and raw_pd is not None:
         stripplot = sns.stripplot(
             data=raw_pd,
@@ -757,41 +736,21 @@ def plot_experiment_metric_comparison(
             zorder=2,
         )
 
-        # --- THE MAGIC TRICK ---
-        # Seaborn saves the exact dodged X positions inside the collections object.
-        # We retrieve these shifted offsets to precisely center the errorbars.
         try:
-            # Group positions dynamically by model index
             collection_paths = stripplot.collections
             n_experiments = len(ordered_labels)
-
-            # Each model group gets its own unique offset array
             offsets = [collection_paths[i].get_offsets()[:, 0][::n_experiments] for i in range(len(hue_order))]
-            # Average the deviations across categories to get a stable offset shift per model
             model_shifts = {model: np.mean(offsets[i] - np.round(offsets[i])) for i, model in enumerate(hue_order)}
         except Exception:
-            # Safe programmatic fallback fallback if formatting variations mismatch collections
-            total_models = len(hue_order)
-            dodge_width = 0.4
-            shifts = np.linspace(-dodge_width / 2, dodge_width / 2, total_models)
-            model_shifts = dict(zip(hue_order, shifts))
-
-    else:
-        # Fallback math manual dodge offsets if show_points=False
-        total_models = len(hue_order)
-        dodge_width = 0.4
-        shifts = np.linspace(-dodge_width / 2, dodge_width / 2, total_models)
-        model_shifts = dict(zip(hue_order, shifts))
+            model_shifts = get_default_model_shifts(hue_order)
 
     label_to_x = {lab: i for i, lab in enumerate(ordered_labels)}
 
-    # 2. Overlay the mean and 95% CI error bars directly onto the dodged tracks
     for model in hue_order:
         model_df = agg_pd[agg_pd[model_col] == model].copy()
         if model_df.empty:
             continue
 
-        # Add the extracted model shift shift directly to the clean integer x-ticks
         shift = model_shifts.get(model, 0.0)
         x_vals = [label_to_x[exp_label] + shift for exp_label in model_df["experiment_label"].astype(str).tolist()]
 
@@ -807,16 +766,14 @@ def plot_experiment_metric_comparison(
             linestyle="None",
             markeredgecolor="black",
             markeredgewidth=1.2,
-            markersize=8,  # Made slightly larger so it completely commands the cluster center
+            markersize=8,
             capsize=5,
-            zorder=5,  # Keeps the mean cleanly elevated on top of the individual run dots
+            zorder=5,
         )
 
-    # Configure axes layout formatting
     ax.set_xticks(list(label_to_x.values()))
     ax.set_xticklabels(list(label_to_x.keys()))
 
-    # Tidy up cleanly duplicate/merged labels in legend entries
     handles, labels = ax.get_legend_handles_labels()
     by_label = dict(zip(labels, handles))
     ax.legend(by_label.values(), by_label.keys(), title="Model Type", loc="upper right")
@@ -826,7 +783,7 @@ def plot_experiment_metric_comparison(
     plt.xlabel("Experiment", labelpad=10)
     plt.ylabel(plot_y_label)
     plt.title(title, pad=15)
-    plt.grid(axis="y", linestyle="--", alpha=0.5)  # Horizontal ticks are cleaner for metric variations
+    plt.grid(axis="y", linestyle="--", alpha=0.5)
     plt.tight_layout()
     plt.savefig(fig_name, dpi=300, bbox_inches="tight")
     plt.show()
