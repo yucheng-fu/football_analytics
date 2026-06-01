@@ -3,7 +3,7 @@ A Python-based football analytics project for analysing the 2018 FIFA World cup 
 
 The project currently contains the following analyses:
 - 01-analysis: Events, xG and possession patterns: An introduction to event-based data in football 
-- 02-analysis: Quantifying quantifying passing difficulty with gradient-boosted tree models: machine learning applied to event data
+- 02-analysis: Quantifying passing difficulty with gradient-boosted tree models: machine learning applied to event data
 
 ## 📊 Analysis Overview
 
@@ -63,7 +63,7 @@ For deployment of FastAPI backend, see [README](https://github.com/yucheng-fu/fo
 For deployment of frontend, see [README](https://github.com/yucheng-fu/football_analytics/blob/main/frontend/README.md)
 
 ## 🛠️ Tech stack 
-**Backend:** Python, FastAPI, Docker
+**Backend:** Python, FastAPI
 
 **Frontend:** TypeScript, HTML, CSS
 
@@ -75,4 +75,4 @@ For deployment of frontend, see [README](https://github.com/yucheng-fu/football_
 
 **Optimsisation & Feature engineering:** Optuna, OpenFE
 
-**Deployment:** HuggingFace Spaces
+**Deployment:** Docker, HuggingFace Spaces
