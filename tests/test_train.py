@@ -37,9 +37,7 @@ def _build_trainer():
     trainer.row_wise_features = []
     trainer.column_wise_features = []
     trainer.row_wise_transformations = MagicMock()
-    trainer.row_wise_transformations.apply_row_wise_transformations.side_effect = (
-        lambda df: df
-    )
+    trainer.row_wise_transformations.apply_row_wise_transformations.side_effect = lambda df: df
     trainer.categorical_columns = []
     trainer.run_name = "baseline"
     trainer.experiment_name = "final_models"
@@ -79,7 +77,7 @@ def test_apply_openfe_rowwise_nodes_uses_safe_production_transform(monkeypatch):
         assert nodes == trainer.row_wise_features
         return expected
 
-    monkeypatch.setattr("training.train.safe_production_transform", _fake_transform)
+    monkeypatch.setattr("training.trainer.safe_production_transform", _fake_transform)
 
     result = trainer._apply_openfe_rowwise_nodes(X_pd)
 
@@ -90,7 +88,7 @@ def test_add_legacy_openfe_aliases_adds_missing_alias_columns(monkeypatch):
     trainer = _build_trainer()
     trainer.row_wise_features = ["node1"]
 
-    monkeypatch.setattr("training.train.tree_to_formula", lambda node: "new_formula")
+    monkeypatch.setattr("training.trainer.tree_to_formula", lambda node: "new_formula")
 
     X_pd = pd.DataFrame({"new_formula": [10, 20]})
     result = trainer._add_legacy_openfe_aliases(X_pd)
@@ -171,8 +169,8 @@ def test_train_runs_fit_and_logs_with_categorical_mapping(monkeypatch):
         def __exit__(self, exc_type, exc, tb):
             return False
 
-    monkeypatch.setattr("training.train.mlflow.start_run", lambda **kwargs: DummyRun())
-    monkeypatch.setattr("training.train.mlflow.end_run", lambda: None)
+    monkeypatch.setattr("training.trainer.mlflow.start_run", lambda **kwargs: DummyRun())
+    monkeypatch.setattr("training.trainer.mlflow.end_run", lambda: None)
 
     model = trainer.train(_FakePolarsFrame(X_df), _FakePolarsFrame(y_df))
 

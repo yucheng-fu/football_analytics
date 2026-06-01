@@ -19,6 +19,28 @@ class CatBoostClassifier:
     pass
 
 
+class _FakePolarsFrame:
+    def __init__(self, df):
+        self._df = df
+
+    def to_pandas(self):
+        return self._df
+
+    def to_numpy(self):
+        return self._df.to_numpy()
+
+
+class DummyRun:
+    def __init__(self, run_ctx):
+        self._run_ctx = run_ctx
+
+    def __enter__(self):
+        return self._run_ctx
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
+
+
 def _build_tuner():
     tuner = ModelParamTuner.__new__(ModelParamTuner)
     tuner.model_type = "lightgbm"
@@ -90,9 +112,7 @@ def test_fit_model_and_select_features_with_loss_curve_logs_figure_when_enabled(
 
     selected_features = np.array(["a", "b"])
     category_schema = {"a": pd.Index([1, 2])}
-    tuner._get_selected_features = MagicMock(
-        return_value=(X_train, X_val, selected_features)
-    )
+    tuner._get_selected_features = MagicMock(return_value=(X_train, X_val, selected_features))
     tuner._extract_category_schema = MagicMock(return_value=category_schema)
 
     fitted_model = LGBMClassifier()
@@ -103,7 +123,7 @@ def test_fit_model_and_select_features_with_loss_curve_logs_figure_when_enabled(
     tuner.wrapper.fit.return_value = fitted_model
 
     fake_fig = object()
-    monkeypatch.setattr("training.tuning.plot_loss_curve", lambda *args: fake_fig)
+    monkeypatch.setattr("training.param_tuner.plot_loss_curve", lambda *args: fake_fig)
 
     model, features, schema = tuner._fit_model_and_select_features_with_loss_curve(
         X_train=X_train,
@@ -119,9 +139,7 @@ def test_fit_model_and_select_features_with_loss_curve_logs_figure_when_enabled(
     assert schema == category_schema
     tuner.wrapper.fit.assert_called_once()
     assert tuner.wrapper.fit.call_args.kwargs["use_early_stopping"] is True
-    tuner.mlflow_handler.log_figure.assert_called_once_with(
-        fig=fake_fig, name="lightgbm_loss_curve"
-    )
+    tuner.mlflow_handler.log_figure.assert_called_once_with(fig=fake_fig, name="lightgbm_loss_curve")
 
 
 def test_fit_model_and_select_features_with_loss_curve_skips_curve_without_validation():
@@ -130,9 +148,7 @@ def test_fit_model_and_select_features_with_loss_curve_skips_curve_without_valid
     y_train = np.array([0, 1])
 
     selected_features = np.array(["a", "b"])
-    tuner._get_selected_features = MagicMock(
-        return_value=(X_train, None, selected_features)
-    )
+    tuner._get_selected_features = MagicMock(return_value=(X_train, None, selected_features))
     tuner._extract_category_schema = MagicMock(return_value={})
 
     fitted_model = LGBMClassifier()
@@ -158,23 +174,10 @@ def test_fit_model_and_select_features_with_loss_curve_skips_curve_without_valid
 def test_tune_and_train_wires_pipeline_and_appends_results(monkeypatch):
     tuner = _build_tuner()
 
-    X = pd.DataFrame(
-        {"f1": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "f2": [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]}
-    )
+    X = pd.DataFrame({"f1": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "f2": [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]})
     y = pd.DataFrame({"target": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1]})
-
-    class FakePolarsFrame:
-        def __init__(self, df):
-            self._df = df
-
-        def to_pandas(self):
-            return self._df
-
-        def to_numpy(self):
-            return self._df.to_numpy()
-
-    X_pl = FakePolarsFrame(X)
-    y_pl = FakePolarsFrame(y)
+    X_pl = _FakePolarsFrame(X)
+    y_pl = _FakePolarsFrame(y)
 
     tuner._setup_mlflow = MagicMock()
     tuner._hyperparameter_tuning = MagicMock(return_value={"depth": 3})
@@ -187,24 +190,12 @@ def test_tune_and_train_wires_pipeline_and_appends_results(monkeypatch):
         )
     )
     tuner._eval_validation_loss = MagicMock(return_value=(0.42, np.array([[0.2, 0.8]])))
-    tuner._augment_params_with_boosting_rounds = MagicMock(
-        return_value={"depth": 3, "n_estimators_used": 10}
-    )
+    tuner._augment_params_with_boosting_rounds = MagicMock(return_value={"depth": 3, "n_estimators_used": 10})
     tuner._append_and_log_metrics_and_params = MagicMock()
 
-    run_ctx = SimpleNamespace(
-        info=SimpleNamespace(run_id="parent-run", experiment_id="exp-id")
-    )
-
-    class DummyRun:
-        def __enter__(self):
-            return run_ctx
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-    monkeypatch.setattr("training.tuning.mlflow.start_run", lambda **kwargs: DummyRun())
-    monkeypatch.setattr("training.tuning.mlflow.end_run", lambda: None)
+    run_ctx = SimpleNamespace(info=SimpleNamespace(run_id="parent-run", experiment_id="exp-id"))
+    monkeypatch.setattr("training.param_tuner.mlflow.start_run", lambda **kwargs: DummyRun(run_ctx))
+    monkeypatch.setattr("training.param_tuner.mlflow.end_run", lambda: None)
 
     results = tuner.tune_and_train(X_pl, y_pl)
 
