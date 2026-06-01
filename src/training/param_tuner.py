@@ -155,6 +155,7 @@ class ModelParamTuner(ModelCVEvaluator):
         best_params: dict,
         open_fe_nodes: Optional[List[Node]] = None,
         open_fe_feature_name_mapping: Optional[dict[str, str]] = None,
+        open_fe_feature_display_name_mapping: Optional[dict[str, str]] = None,
         X_val_outer: Optional[pd.DataFrame] = None,
         y_val_outer: Optional[np.ndarray] = None,
         plot_loss_curve: bool = False,
@@ -193,8 +194,14 @@ class ModelParamTuner(ModelCVEvaluator):
         )
 
         if self.log_feature_importance:
+            X_feature_importance = self._build_feature_importance_input(
+                X_train=X_train_outer_pd,
+                selected_features=selected_features,
+            )
             fig = plot_feature_importance(
-                X_train=X_train_outer_pd[selected_features], model=final_model
+                X_train=X_feature_importance,
+                model=final_model,
+                feature_display_name_mapping=open_fe_feature_display_name_mapping,
             )
             self.mlflow_handler.log_figure(fig=fig, name="feature_importance")
 
@@ -225,6 +232,7 @@ class ModelParamTuner(ModelCVEvaluator):
         )
         column_wise_features: List[Node] = []
         formula_to_safe_name: dict[str, str] = {}
+        open_fe_feature_display_name_mapping: dict[str, str] = {}
 
         with mlflow.start_run(run_name=f"{self.run_name}_{self.model_type}") as run:
             parent_id = run.info.run_id
@@ -238,13 +246,17 @@ class ModelParamTuner(ModelCVEvaluator):
                 else lambda study, trial: None
             )
             if self.use_ofe and self.open_fe_transformations is not None:
-                X_train, X_val, column_wise_features, formula_to_safe_name = (
-                    self._ofe_transform(
-                        X_train_outer=X_train,
-                        y_train_outer=y_train,
-                        X_val_outer=X_val,
-                        i=0,
-                    )
+                (
+                    X_train,
+                    X_val,
+                    column_wise_features,
+                    formula_to_safe_name,
+                    open_fe_feature_display_name_mapping,
+                ) = self._ofe_transform(
+                    X_train_outer=X_train,
+                    y_train_outer=y_train,
+                    X_val_outer=X_val,
+                    i=0,
                 )
 
             # 1. Perform full hyperparamter tuning
@@ -268,6 +280,7 @@ class ModelParamTuner(ModelCVEvaluator):
                 best_params=best_params,
                 open_fe_nodes=column_wise_features,
                 open_fe_feature_name_mapping=formula_to_safe_name,
+                open_fe_feature_display_name_mapping=open_fe_feature_display_name_mapping,
                 X_val_outer=X_val,
                 y_val_outer=y_val,
                 plot_loss_curve=True,
