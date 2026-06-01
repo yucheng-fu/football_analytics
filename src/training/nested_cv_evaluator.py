@@ -483,6 +483,22 @@ class ModelCVEvaluator:
 
         return (X_train_selected, X_val_selected, selected_features)
 
+    def _build_feature_importance_input(
+        self,
+        X_train: pd.DataFrame,
+        selected_features: list[str] | np.ndarray,
+    ) -> pd.DataFrame:
+        """Return selected training columns for feature-importance plotting.
+
+        Args:
+            X_train (pd.DataFrame): Training features with model-safe column names.
+            selected_features (list[str] | np.ndarray): Model input columns selected for training.
+
+        Returns:
+            pd.DataFrame: Selected feature dataframe.
+        """
+        return X_train.loc[:, list(selected_features)]
+
     def _get_feature_selector(self, fit_params: dict, n_features_to_select: float, transform: str = "pandas") -> RFE:
         """Create an RFE selector configured with the current base estimator.
 
@@ -594,7 +610,7 @@ class ModelCVEvaluator:
         y_train_outer: np.ndarray,
         X_val_outer: pd.DataFrame,
         i: int,
-    ) -> Tuple[pd.DataFrame, pd.DataFrame, List[Node], dict[str, str]]:
+    ) -> Tuple[pd.DataFrame, pd.DataFrame, List[Node], dict[str, str], dict[str, str]]:
         """Apply OpenFE transformations to the outer fold data and log the generated features and mappings.
 
         Args:
@@ -604,7 +620,9 @@ class ModelCVEvaluator:
             i (int): Current outer fold index for logging purposes.
 
         Returns:
-            Tuple[pd.DataFrame, pd.DataFrame, List[Node], dict[str, str]]: _description_
+            Tuple[pd.DataFrame, pd.DataFrame, List[Node], dict[str, str], dict[str, str]]:
+                Transformed train/validation data, column-wise OpenFE nodes,
+                formula-to-safe-name mapping, and safe-name-to-formula mapping.
         """
         self.logger.info(f"Fitting OpenFE on fold {i + 1}")
         row_wise_features, column_wise_features = self.open_fe_transformations.fit(
@@ -639,7 +657,7 @@ class ModelCVEvaluator:
         for feat_name, formula in full_mapping.items():
             self.logger.info(f"Feature: {feat_name:20} | Formula: {formula}")
 
-        return X_train_outer, X_val_outer, column_wise_features, formula_to_safe_name
+        return X_train_outer, X_val_outer, column_wise_features, formula_to_safe_name, full_mapping
 
     def _hyperparameter_tuning(
         self,
@@ -757,6 +775,7 @@ class ModelCVEvaluator:
         best_params: dict,
         open_fe_nodes: Optional[List[Node]] = None,
         open_fe_feature_name_mapping: Optional[dict[str, str]] = None,
+        open_fe_feature_display_name_mapping: Optional[dict[str, str]] = None,
     ) -> Tuple[
         Union[LGBMClassifier, XGBClassifier, CatBoostClassifier],
         np.ndarray,
@@ -771,6 +790,8 @@ class ModelCVEvaluator:
             open_fe_nodes (Optional[List[Node]], optional): Column-wise OpenFE nodes.
             open_fe_feature_name_mapping (Optional[dict[str, str]], optional):
                 Mapping from OpenFE formula names to safe output column names.
+            open_fe_feature_display_name_mapping (Optional[dict[str, str]], optional):
+                Mapping from safe output column names to OpenFE formula names.
 
         Returns:
             Tuple[Union[LGBMClassifier, XGBClassifier, CatBoostClassifier], np.ndarray, dict[str, pd.Index], ColumnTransformer | None]:
@@ -795,7 +816,15 @@ class ModelCVEvaluator:
             use_early_stopping=True,
         )
         if self.log_feature_importance:
-            fig = plot_feature_importance(X_train=X_train_outer[selected_features], model=final_model)
+            X_feature_importance = self._build_feature_importance_input(
+                X_train=X_train_outer,
+                selected_features=selected_features,
+            )
+            fig = plot_feature_importance(
+                X_train=X_feature_importance,
+                model=final_model,
+                feature_display_name_mapping=open_fe_feature_display_name_mapping,
+            )
             self.mlflow_handler.log_figure(fig=fig, name="feature_importance")
 
         return final_model, selected_features, category_schema, column_transformer
@@ -835,6 +864,7 @@ class ModelCVEvaluator:
                 y_val_outer = y_train_np[val_idx]
                 column_wise_features: List[Node] = []
                 formula_to_safe_name: dict[str, str] = {}
+                open_fe_feature_display_name_mapping: dict[str, str] = {}
 
                 with mlflow.start_run(nested=True, run_name=f"Outer_fold_{i + 1}") as run:
                     parent_id = run.info.run_id
@@ -853,6 +883,7 @@ class ModelCVEvaluator:
                             X_val_outer,
                             column_wise_features,
                             formula_to_safe_name,
+                            open_fe_feature_display_name_mapping,
                         ) = self._ofe_transform(
                             X_train_outer=X_train_outer,
                             y_train_outer=y_train_outer,
@@ -881,6 +912,7 @@ class ModelCVEvaluator:
                         best_params=best_params,
                         open_fe_nodes=column_wise_features,
                         open_fe_feature_name_mapping=formula_to_safe_name,
+                        open_fe_feature_display_name_mapping=open_fe_feature_display_name_mapping,
                     )
 
                     # 3. Evaluate final model on the outer validation fold and log final model to model registry

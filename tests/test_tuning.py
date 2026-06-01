@@ -4,7 +4,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pandas as pd
 
-from training.tuning import ModelParamTuner
+from training.param_tuner import ModelParamTuner
 
 
 class LGBMClassifier:
@@ -17,6 +17,28 @@ class XGBClassifier:
 
 class CatBoostClassifier:
     pass
+
+
+class _FakePolarsFrame:
+    def __init__(self, df):
+        self._df = df
+
+    def to_pandas(self):
+        return self._df
+
+    def to_numpy(self):
+        return self._df.to_numpy()
+
+
+class DummyRun:
+    def __init__(self, run_ctx):
+        self._run_ctx = run_ctx
+
+    def __enter__(self):
+        return self._run_ctx
+
+    def __exit__(self, exc_type, exc, tb):
+        return False
 
 
 def _build_tuner():
@@ -79,7 +101,9 @@ def test_extract_loss_history_for_catboost():
     assert valid_loss == [0.7, 0.35]
 
 
-def test_fit_model_and_select_features_with_loss_curve_logs_figure_when_enabled(monkeypatch):
+def test_fit_model_and_select_features_with_loss_curve_logs_figure_when_enabled(
+    monkeypatch,
+):
     tuner = _build_tuner()
     X_train = pd.DataFrame({"a": [1, 2], "b": [3, 4]})
     y_train = np.array([0, 1])
@@ -99,7 +123,7 @@ def test_fit_model_and_select_features_with_loss_curve_logs_figure_when_enabled(
     tuner.wrapper.fit.return_value = fitted_model
 
     fake_fig = object()
-    monkeypatch.setattr("training.tuning.plot_loss_curve", lambda *args: fake_fig)
+    monkeypatch.setattr("training.param_tuner.plot_loss_curve", lambda *args: fake_fig)
 
     model, features, schema = tuner._fit_model_and_select_features_with_loss_curve(
         X_train=X_train,
@@ -152,19 +176,8 @@ def test_tune_and_train_wires_pipeline_and_appends_results(monkeypatch):
 
     X = pd.DataFrame({"f1": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], "f2": [10, 9, 8, 7, 6, 5, 4, 3, 2, 1]})
     y = pd.DataFrame({"target": [0, 1, 0, 1, 0, 1, 0, 1, 0, 1]})
-
-    class FakePolarsFrame:
-        def __init__(self, df):
-            self._df = df
-
-        def to_pandas(self):
-            return self._df
-
-        def to_numpy(self):
-            return self._df.to_numpy()
-
-    X_pl = FakePolarsFrame(X)
-    y_pl = FakePolarsFrame(y)
+    X_pl = _FakePolarsFrame(X)
+    y_pl = _FakePolarsFrame(y)
 
     tuner._setup_mlflow = MagicMock()
     tuner._hyperparameter_tuning = MagicMock(return_value={"depth": 3})
@@ -181,16 +194,8 @@ def test_tune_and_train_wires_pipeline_and_appends_results(monkeypatch):
     tuner._append_and_log_metrics_and_params = MagicMock()
 
     run_ctx = SimpleNamespace(info=SimpleNamespace(run_id="parent-run", experiment_id="exp-id"))
-
-    class DummyRun:
-        def __enter__(self):
-            return run_ctx
-
-        def __exit__(self, exc_type, exc, tb):
-            return False
-
-    monkeypatch.setattr("training.tuning.mlflow.start_run", lambda **kwargs: DummyRun())
-    monkeypatch.setattr("training.tuning.mlflow.end_run", lambda: None)
+    monkeypatch.setattr("training.param_tuner.mlflow.start_run", lambda **kwargs: DummyRun(run_ctx))
+    monkeypatch.setattr("training.param_tuner.mlflow.end_run", lambda: None)
 
     results = tuner.tune_and_train(X_pl, y_pl)
 

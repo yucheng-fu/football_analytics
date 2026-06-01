@@ -29,6 +29,17 @@ Create virtual environment and install packages
 uv sync
 ```
 
+## 💻 Experiment tracking with MLFlow
+Start MLFLow server for experiment tracking and 
+```bash
+mlflow server --port 8080
+```
+
+Delete runs, metadata and artifacts that have been marked for deletion 
+```bash
+mlflow gc --tracking-uri "http://127.0.0.1:8080"
+```
+
 ## 🔬 Tests, linting and formatting 
 Run all tests
 ```bash
