@@ -24,7 +24,13 @@ cd football_analytics
 
 Install `uv` package manager. Please refer to their [documentation](https://docs.astral.sh/uv/getting-started/installation/)
 
-Create virtual environment and install packages
+Create and activate virtual environment
+```bash
+uv venv .venv --python 3.11.10
+\.venv\activate\activate.bat
+```
+
+Install dependencies
 ```bash
 uv sync
 ```

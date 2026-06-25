@@ -54,7 +54,8 @@ class LGBMWrapper(BaseModelWrapper):
         model.fit(
             X_train,
             y_train,
-            eval_set=[(X_val, y_val)] if X_val is not None else None,
+            eval_set=[(X_train, y_train), (X_val, y_val)] if X_val is not None else None,
+            eval_names=["training", "valid_0"] if X_val is not None else None,
             eval_metric="binary_logloss",
             callbacks=callbacks or None,
             categorical_feature=cat_cols or "auto",
