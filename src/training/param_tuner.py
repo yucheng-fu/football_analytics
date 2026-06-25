@@ -185,10 +185,14 @@ class ModelParamTuner(ModelCVEvaluator):
                 X_train=X_train_outer_pd,
                 selected_features=selected_features,
             )
+            feature_display_name_mapping = {
+                safe_name: formula for formula, safe_name in (open_fe_feature_name_mapping or {}).items()
+            }
+            feature_display_name_mapping.update(open_fe_feature_display_name_mapping or {})
             fig = plot_feature_importance(
                 X_train=X_feature_importance,
                 model=final_model,
-                feature_display_name_mapping=open_fe_feature_display_name_mapping,
+                feature_display_name_mapping=feature_display_name_mapping,
             )
             self.mlflow_handler.log_figure(fig=fig, name="feature_importance")
 

@@ -48,13 +48,14 @@ class XGBoostWrapper(BaseModelWrapper):
             model.set_params(early_stopping_rounds=self.early_stopping_rounds)
 
         if trial:
-            callbacks = [XGBoostPruningCallback(trial, "validation_0-logloss")]
+            validation_name = "validation_1-logloss" if X_val is not None else "validation_0-logloss"
+            callbacks = [XGBoostPruningCallback(trial, validation_name)]
             model.set_params(callbacks=callbacks)
 
         model.fit(
             X_train,
             y_train,
-            eval_set=[(X_val, y_val)] if X_val is not None else None,
+            eval_set=[(X_train, y_train), (X_val, y_val)] if X_val is not None else None,
             verbose=False,
         )
 
