@@ -10,7 +10,7 @@ The project currently contains the following analyses:
 | Analysis | Description | Notebook | Blog |
 |----------|-------------|----------|------|
 | **01 — Event & xG Analysis** | Events, xG and possession pattern analysis using StatsBomb data | [📓 Notebook](https://github.com/yucheng-fu/football_analytics/blob/main/src/01-analysis/01-analysis.ipynb) | [📝 Blog](https://yucheng-fu.github.io/blog/2025/wc2018-part1/) |
-| **02 — Pass Difficulty Modelling** | Gradient-boosted models for quantifying pass difficulty | [📓 Notebook](https://github.com/yucheng-fu/football_analytics/blob/main/src/02-analysis/02-analysis.ipynb) | TBD |
+| **02 — Pass Difficulty Modelling** | Gradient-boosted models for quantifying pass difficulty | [📓 Notebook](https://github.com/yucheng-fu/football_analytics/blob/main/src/02-analysis/02-analysis.ipynb) | [📝 Blog](https://yucheng-fu.github.io/blog/2026/wc2018-part2/) |
 
 
 You can also check out the interactive pass classifier [here](https://yucheng-fu.github.io/football-analytics/).
@@ -24,13 +24,7 @@ cd football_analytics
 
 Install `uv` package manager. Please refer to their [documentation](https://docs.astral.sh/uv/getting-started/installation/)
 
-Create and activate virtual environment
-```bash
-uv venv .venv --python 3.11.10
-\.venv\activate\activate.bat
-```
-
-Install dependencies
+Create virtual environment and install dependencies from `uv` lock file:
 ```bash
 uv sync
 ```
